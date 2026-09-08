@@ -155,8 +155,11 @@ interface AppContextType {
   saveProduct: (product: Product) => void;
   deleteOrDeactivateProduct: (productId: string) => void;
   saveConsoleRates: (consoleId: string, rates: XboxConsole['rates']) => void;
+  updateConsoleRates: (consoleId: string, rates: XboxConsole['rates']) => void;
   saveExtraControllerRates: (rates: ExtraControllerRate[]) => void;
+  updateExtraControllerRates: (rates: ExtraControllerRate[]) => void;
   resetToDefaults: () => void;
+  resetToInitialDefaults: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -943,8 +946,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         saveProduct,
         deleteOrDeactivateProduct,
         saveConsoleRates,
+        updateConsoleRates: saveConsoleRates,
         saveExtraControllerRates,
+        updateExtraControllerRates: saveExtraControllerRates,
         resetToDefaults,
+        resetToInitialDefaults: resetToDefaults,
       }}
     >
       {children}
