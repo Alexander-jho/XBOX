@@ -7,6 +7,9 @@ import {
   SaleItem,
   Product,
   XboxConsole,
+  LightMode,
+  ConsoleRate,
+  ExtraControllerRate,
 } from '../types';
 import {
   X,
@@ -20,6 +23,8 @@ import {
   Gamepad2,
   AlertTriangle,
   Receipt,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { formatCOP } from '../utils/formatters';
 
@@ -53,6 +58,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
 
   // Xbox specific selections (when area === 'xbox')
   const [selectedConsoleId, setSelectedConsoleId] = useState<string>(consoles[0]?.id || 'c1');
+  const [selectedLightMode, setSelectedLightMode] = useState<LightMode>('con_luz');
   const [selectedRateId, setSelectedRateId] = useState<string>('');
   const [extraControllersCount, setExtraControllersCount] = useState<number>(0);
   const [selectedExtraRateId, setSelectedExtraRateId] = useState<string>(extraControllerRates[0]?.id || '');
@@ -135,12 +141,19 @@ export const SalesModal: React.FC<SalesModalProps> = ({
   };
 
   // Add Xbox session to cart directly
-  const handleAddXboxRate = (rate: { label: string; price: number }) => {
+  const handleAddXboxRate = (rate: ConsoleRate) => {
     const extraRate = extraControllerRates.find(r => r.id === selectedExtraRateId) || extraControllerRates[0];
-    const extraTotal = extraControllersCount > 0 && extraRate ? extraControllersCount * extraRate.price : 0;
-    const finalPrice = rate.price + extraTotal;
+    const basePrice = selectedLightMode === 'con_luz' ? rate.priceConLuz : rate.priceSinLuz;
+    const extraPerCtrl = extraRate
+      ? selectedLightMode === 'con_luz'
+        ? extraRate.priceConLuz
+        : extraRate.priceSinLuz
+      : 0;
+    const extraTotal = extraControllersCount > 0 ? extraControllersCount * extraPerCtrl : 0;
+    const finalPrice = basePrice + extraTotal;
 
-    let itemName = `${currentConsole.name} (${currentConsole.model}) — ${rate.label}`;
+    const modeText = selectedLightMode === 'con_luz' ? 'Con luz' : 'Sin luz';
+    let itemName = `${currentConsole.name} (${currentConsole.model}) — ${rate.label} [${modeText}]`;
     if (extraControllersCount > 0) {
       itemName += ` + ${extraControllersCount} ctrl extra`;
     }
@@ -326,6 +339,39 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                   </div>
                 </div>
 
+                {/* Modalidad: Con Luz vs Sin Luz */}
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-1.5">
+                  <span className="text-xs font-bold text-slate-700 uppercase block">
+                    Modalidad de energía / servicio:
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLightMode('con_luz')}
+                      className={`p-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border cursor-pointer transition-all ${
+                        selectedLightMode === 'con_luz'
+                          ? 'bg-amber-500 text-white border-amber-500 shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Sun className="w-4 h-4" />
+                      <span>Con luz (Normal)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedLightMode('sin_luz')}
+                      className={`p-2 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 border cursor-pointer transition-all ${
+                        selectedLightMode === 'sin_luz'
+                          ? 'bg-indigo-700 text-white border-indigo-700 shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <Moon className="w-4 h-4" />
+                      <span>Sin luz (Planta)</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Extra Controllers configuration */}
                 <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
                   <div className="flex items-center justify-between">
@@ -334,6 +380,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                     </span>
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() => setExtraControllersCount(Math.max(0, extraControllersCount - 1))}
                         className="w-7 h-7 rounded-lg bg-white border border-slate-300 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
                       >
@@ -341,6 +388,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                       </button>
                       <span className="font-bold text-sm w-4 text-center">{extraControllersCount}</span>
                       <button
+                        type="button"
                         onClick={() => setExtraControllersCount(extraControllersCount + 1)}
                         className="w-7 h-7 rounded-lg bg-white border border-slate-300 flex items-center justify-center font-bold text-slate-700 hover:bg-slate-100 cursor-pointer"
                       >
@@ -353,15 +401,18 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                     <div className="pt-2 border-t border-slate-200">
                       <label className="text-[11px] text-slate-500 block mb-1">Tarifa de control adicional:</label>
                       <select
-                        value={selectedExtraRateId}
+                        value={selectedExtraRateId || ''}
                         onChange={e => setSelectedExtraRateId(e.target.value)}
                         className="w-full text-xs font-medium bg-white border border-slate-300 rounded-lg p-1.5"
                       >
-                        {extraControllerRates.map(r => (
-                          <option key={r.id} value={r.id}>
-                            {r.name} ({formatCOP(r.price)} c/u)
-                          </option>
-                        ))}
+                        {extraControllerRates.map(r => {
+                          const price = selectedLightMode === 'con_luz' ? r.priceConLuz : r.priceSinLuz;
+                          return (
+                            <option key={r.id} value={r.id}>
+                              {r.name} ({formatCOP(price)} c/u)
+                            </option>
+                          );
+                        })}
                       </select>
                     </div>
                   )}
@@ -373,21 +424,25 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                     2. Seleccione Tiempo ({currentConsole.name} - {currentConsole.model})
                   </label>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {currentConsole.rates.map(r => (
-                      <button
-                        key={r.id}
-                        onClick={() => handleAddXboxRate(r)}
-                        className="p-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-left font-bold shadow-xs cursor-pointer transition-all flex items-center justify-between active:scale-98"
-                      >
-                        <div>
-                          <span className="text-sm block">{r.label}</span>
-                          <span className="text-xs opacity-80">{r.minutes} minutos</span>
-                        </div>
-                        <span className="text-base font-black bg-emerald-700/50 px-2.5 py-1 rounded-lg">
-                          {formatCOP(r.price)}
-                        </span>
-                      </button>
-                    ))}
+                    {currentConsole.rates.map(r => {
+                      const price = selectedLightMode === 'con_luz' ? r.priceConLuz : r.priceSinLuz;
+                      return (
+                        <button
+                          key={r.id}
+                          type="button"
+                          onClick={() => handleAddXboxRate(r)}
+                          className="p-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-left font-bold shadow-xs cursor-pointer transition-all flex items-center justify-between active:scale-98"
+                        >
+                          <div>
+                            <span className="text-sm block">{r.label}</span>
+                            <span className="text-xs opacity-80">{r.minutes} minutos</span>
+                          </div>
+                          <span className="text-base font-black bg-emerald-700/50 px-2.5 py-1 rounded-lg">
+                            {formatCOP(price)}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>

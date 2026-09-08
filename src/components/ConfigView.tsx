@@ -7,11 +7,13 @@ import {
   Trash2,
   Save,
   RotateCcw,
-  Package,
   Coins,
   CheckCircle,
+  Sun,
+  Moon,
 } from 'lucide-react';
 import { formatCOP } from '../utils/formatters';
+import { ConsoleRate, ExtraControllerRate } from '../types';
 
 export const ConfigView: React.FC = () => {
   const {
@@ -26,11 +28,11 @@ export const ConfigView: React.FC = () => {
   const activeConsole = consoles.find(c => c.id === selectedConsoleId) || consoles[0];
 
   // Local state for editing the active console's rates
-  const [ratesCopy, setRatesCopy] = useState(activeConsole.rates);
+  const [ratesCopy, setRatesCopy] = useState<ConsoleRate[]>(activeConsole.rates);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState<string | null>(null);
 
   // Local state for editing extra controller rates
-  const [extraRatesCopy, setExtraRatesCopy] = useState(extraControllerRates);
+  const [extraRatesCopy, setExtraRatesCopy] = useState<ExtraControllerRate[]>(extraControllerRates);
 
   // Sync when active console selection changes
   const handleSelectConsole = (id: string) => {
@@ -41,7 +43,11 @@ export const ConfigView: React.FC = () => {
     }
   };
 
-  const handleRateFieldChange = (index: number, field: 'label' | 'minutes' | 'price', value: any) => {
+  const handleRateFieldChange = (
+    index: number,
+    field: 'label' | 'minutes' | 'priceConLuz' | 'priceSinLuz',
+    value: any
+  ) => {
     const updated = [...ratesCopy];
     updated[index] = {
       ...updated[index],
@@ -57,7 +63,8 @@ export const ConfigView: React.FC = () => {
         id: `rate-${Date.now()}`,
         label: 'Nuevo Tiempo',
         minutes: 45,
-        price: 3500,
+        priceConLuz: 3500,
+        priceSinLuz: 4500,
       },
     ]);
   };
@@ -74,14 +81,18 @@ export const ConfigView: React.FC = () => {
   const handleSaveRates = () => {
     updateConsoleRates(activeConsole.id, ratesCopy);
     setSaveSuccessMsg(`¡Tarifas de ${activeConsole.name} guardadas con éxito!`);
-    setTimeout(() => setSaveSuccessMsg(null), 2000);
+    setTimeout(() => setSaveSuccessMsg(null), 2500);
   };
 
-  const handleExtraRateChange = (index: number, priceVal: string) => {
+  const handleExtraRateChange = (
+    index: number,
+    field: 'priceConLuz' | 'priceSinLuz',
+    priceVal: string
+  ) => {
     const updated = [...extraRatesCopy];
     updated[index] = {
       ...updated[index],
-      price: parseFloat(priceVal.replace(/\D/g, '')) || 0,
+      [field]: parseFloat(priceVal.replace(/\D/g, '')) || 0,
     };
     setExtraRatesCopy(updated);
   };
@@ -89,7 +100,7 @@ export const ConfigView: React.FC = () => {
   const handleSaveExtraRates = () => {
     updateExtraControllerRates(extraRatesCopy);
     setSaveSuccessMsg('¡Tarifas de controles adicionales guardadas con éxito!');
-    setTimeout(() => setSaveSuccessMsg(null), 2000);
+    setTimeout(() => setSaveSuccessMsg(null), 2500);
   };
 
   return (
@@ -123,10 +134,10 @@ export const ConfigView: React.FC = () => {
         <div>
           <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
             <Gamepad2 className="w-5 h-5 text-emerald-600" />
-            <span>Tarifas de Consolas de Videojuego</span>
+            <span>Tarifas de Consolas de Videojuego (Con Luz / Sin Luz)</span>
           </h3>
           <p className="text-xs text-slate-500">
-            Personalice los precios por hora, 30 minutos o 20 minutos para cada consola individualmente.
+            Personalice los precios por hora, 30 minutos o 20 minutos para cada consola individualmente, según las modalidades &quot;Con luz&quot; y &quot;Sin luz&quot;.
           </p>
         </div>
 
@@ -162,49 +173,63 @@ export const ConfigView: React.FC = () => {
             </button>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             {ratesCopy.map((rate, idx) => (
               <div
                 key={rate.id || idx}
-                className="grid grid-cols-1 sm:grid-cols-12 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-200 items-center text-xs"
+                className="grid grid-cols-1 sm:grid-cols-12 gap-2.5 bg-slate-50 p-3.5 rounded-xl border border-slate-200 items-center text-xs"
               >
-                <div className="sm:col-span-5">
+                <div className="sm:col-span-4">
                   <label className="text-[11px] text-slate-500 block mb-0.5 font-semibold">
                     Etiqueta / Nombre:
                   </label>
                   <input
                     type="text"
-                    value={rate.label}
+                    value={rate.label || ''}
                     onChange={e => handleRateFieldChange(idx, 'label', e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 font-bold text-slate-800"
                   />
                 </div>
 
-                <div className="sm:col-span-3">
+                <div className="sm:col-span-2">
                   <label className="text-[11px] text-slate-500 block mb-0.5 font-semibold">
-                    Duración (minutos):
+                    Duración (min):
                   </label>
                   <input
                     type="number"
-                    value={rate.minutes}
+                    value={rate.minutes ?? 0}
                     onChange={e => handleRateFieldChange(idx, 'minutes', e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2 font-mono font-bold"
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 font-mono font-bold text-slate-800"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="text-[11px] text-emerald-700 flex items-center gap-1 mb-0.5 font-bold">
+                    <Sun className="w-3 h-3 text-amber-500" />
+                    <span>Con luz ($):</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={rate.priceConLuz ?? 0}
+                    onChange={e => handleRateFieldChange(idx, 'priceConLuz', e.target.value)}
+                    className="w-full bg-white border border-emerald-300 rounded-lg p-2 font-black text-emerald-800"
                   />
                 </div>
 
                 <div className="sm:col-span-3">
-                  <label className="text-[11px] text-slate-500 block mb-0.5 font-semibold">
-                    Precio ($ COP):
+                  <label className="text-[11px] text-slate-600 flex items-center gap-1 mb-0.5 font-bold">
+                    <Moon className="w-3 h-3 text-indigo-500" />
+                    <span>Sin luz / Planta ($):</span>
                   </label>
                   <input
                     type="number"
-                    value={rate.price}
-                    onChange={e => handleRateFieldChange(idx, 'price', e.target.value)}
-                    className="w-full bg-white border border-slate-300 rounded-lg p-2 font-black text-emerald-700"
+                    value={rate.priceSinLuz ?? 0}
+                    onChange={e => handleRateFieldChange(idx, 'priceSinLuz', e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 font-black text-slate-800"
                   />
                 </div>
 
-                <div className="sm:col-span-1 flex justify-end pt-4 sm:pt-0">
+                <div className="sm:col-span-1 flex justify-end pt-2 sm:pt-0">
                   <button
                     onClick={() => handleRemoveRate(idx)}
                     title="Eliminar tarifa"
@@ -234,10 +259,10 @@ export const ConfigView: React.FC = () => {
         <div>
           <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
             <Coins className="w-5 h-5 text-indigo-600" />
-            <span>Tarifas de Controles Adicionales</span>
+            <span>Tarifas de Controles Adicionales (Con Luz / Sin Luz)</span>
           </h3>
           <p className="text-xs text-slate-500">
-            Ajuste el valor a cobrar por cada mando extra en las sesiones de juego (por sesión o por hora).
+            Ajuste el valor a cobrar por cada mando extra en las sesiones de juego según la modalidad del servicio.
           </p>
         </div>
 
@@ -245,17 +270,36 @@ export const ConfigView: React.FC = () => {
           {extraRatesCopy.map((rate, idx) => (
             <div
               key={rate.id}
-              className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2 text-xs"
+              className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3 text-xs"
             >
               <strong className="text-slate-900 block font-bold text-sm">{rate.name}</strong>
-              <div>
-                <label className="text-slate-500 block mb-1">Precio a cobrar ($ COP):</label>
-                <input
-                  type="number"
-                  value={rate.price}
-                  onChange={e => handleExtraRateChange(idx, e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg p-2 font-black text-base text-indigo-800"
-                />
+
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="text-emerald-700 flex items-center gap-1 mb-1 font-bold text-[11px]">
+                    <Sun className="w-3 h-3 text-amber-500" />
+                    <span>Con luz ($):</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={rate.priceConLuz ?? 0}
+                    onChange={e => handleExtraRateChange(idx, 'priceConLuz', e.target.value)}
+                    className="w-full bg-white border border-emerald-300 rounded-lg p-2 font-black text-sm text-emerald-800"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-600 flex items-center gap-1 mb-1 font-bold text-[11px]">
+                    <Moon className="w-3 h-3 text-indigo-500" />
+                    <span>Sin luz ($):</span>
+                  </label>
+                  <input
+                    type="number"
+                    value={rate.priceSinLuz ?? 0}
+                    onChange={e => handleExtraRateChange(idx, 'priceSinLuz', e.target.value)}
+                    className="w-full bg-white border border-slate-300 rounded-lg p-2 font-black text-sm text-slate-800"
+                  />
+                </div>
               </div>
             </div>
           ))}

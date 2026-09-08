@@ -185,7 +185,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                   <div className="flex items-center gap-2">
                     <input
                       type="number"
-                      value={initialBaseInput}
+                      value={initialBaseInput ?? ''}
                       onChange={e => setInitialBaseInput(e.target.value)}
                       className="w-28 bg-white border border-slate-300 rounded px-2 py-1 text-right font-bold text-xs"
                     />
