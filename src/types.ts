@@ -4,13 +4,26 @@ export type PaymentMethod = 'efectivo' | 'transferencia';
 
 export type TransferProvider = 'Nequi' | 'Daviplata' | 'Bancolombia' | 'Otro';
 
-export type NavTab = 'dashboard' | 'xbox' | 'inventory' | 'transfers' | 'history' | 'settings';
+export type LightMode = 'con_luz' | 'sin_luz';
+
+export type UserRole = 'admin' | 'cajero';
+
+export interface User {
+  id: string;
+  username: string;
+  name: string;
+  role: UserRole;
+  password?: string;
+}
+
+export type NavTab = 'dashboard' | 'xbox' | 'inventory' | 'transfers' | 'history' | 'reports' | 'settings';
 
 export interface Product {
   id: string;
   name: string;
   area: 'gargueria' | 'papeleria';
   category: string;
+  brand?: string;
   price: number;
   cost: number;
   stock: number;
@@ -24,13 +37,15 @@ export interface ConsoleRate {
   id: string;
   label: string; // e.g. "1 hora", "30 minutos", "20 minutos"
   minutes: number;
-  price: number;
+  priceConLuz: number;
+  priceSinLuz: number;
 }
 
 export interface ExtraControllerRate {
   id: string;
-  name: string; // e.g. "Estándar 1h ($1.500)", "Tarifa Pro ($2.500)"
-  price: number;
+  name: string;
+  priceConLuz: number; // e.g. 1500
+  priceSinLuz: number; // e.g. 2500
 }
 
 export interface XboxConsole {
@@ -41,26 +56,65 @@ export interface XboxConsole {
   rates: ConsoleRate[];
 }
 
+export interface SessionProductItem {
+  id: string;
+  productId: string;
+  name: string;
+  quantity: number;
+  unitPrice: number;
+  subtotal: number;
+  category?: string;
+}
+
 export interface ActiveXboxSession {
   id: string;
+  accountNumber: string; // e.g. "CUENTA #001"
   consoleId: string;
   consoleName: string;
-  consoleModel: string;
+  consoleModel: 'Xbox' | 'PlayStation 5' | 'PlayStation 4';
+  lightMode: LightMode;
   startTime: number; // timestamp in ms
-  durationMinutes: number;
+  durationMinutes: number; // total minutes
   endTime: number; // timestamp in ms
-  rateLabel: string;
-  basePrice: number;
+  initialMinutes: number;
+  initialRateLabel: string;
+  initialPrice: number;
+  addedTimeMinutes: number;
+  addedTimePrice: number;
   extraControllers: number;
-  extraControllerRateId?: string;
-  extraControllerRateName?: string;
   extraControllerPrice: number;
+  products: SessionProductItem[];
   totalPrice: number;
   notes?: string;
-  isPaid: boolean;
+  isPaid?: boolean;
   paymentMethod?: PaymentMethod;
   transferProvider?: TransferProvider;
   transferReference?: string;
+}
+
+export interface ClosedConsoleSession {
+  id: string;
+  accountNumber: string;
+  consoleId: string;
+  consoleName: string;
+  consoleModel: string;
+  lightMode: LightMode;
+  startTime: number;
+  endTime: number;
+  initialMinutes: number;
+  addedMinutes: number;
+  totalMinutes: number;
+  extraControllers: number;
+  extraControllerPrice: number;
+  products: SessionProductItem[];
+  totalConsoleTimePrice: number;
+  totalProductsPrice: number;
+  totalPrice: number;
+  paymentMethod: PaymentMethod;
+  transferProvider?: TransferProvider;
+  transferReference?: string;
+  closedAt: number;
+  saleId: string;
 }
 
 export interface SaleItem {
@@ -97,6 +151,8 @@ export interface Expense {
   concept: string;
   amount: number;
   paymentMethod: PaymentMethod;
+  transferProvider?: TransferProvider;
+  transferReference?: string;
   notes?: string;
 }
 
@@ -125,6 +181,11 @@ export interface CashClosure {
   countedCash: number;
   difference: number;
   status: 'cuadrada' | 'faltante' | 'sobrante';
+  gargueriaSales: number;
+  xboxSales: number;
+  papeleriaSales: number;
+  consoleSessionsCount: number;
+  productsSoldCount: number;
   notes?: string;
 }
 
@@ -149,3 +210,4 @@ export interface InventoryEntry {
   timestamp: number;
   notes?: string;
 }
+

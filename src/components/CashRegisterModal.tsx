@@ -12,6 +12,9 @@ import {
   History,
   Lock,
   Unlock,
+  Layers,
+  Gamepad2,
+  ShoppingBag,
 } from 'lucide-react';
 import { formatCOP, formatFullDateEs, formatShortTime } from '../utils/formatters';
 
@@ -26,6 +29,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
 }) => {
   const {
     currentCash,
+    todayDate,
     todaySalesTotal,
     todayCashSales,
     todayTransferSales,
@@ -34,6 +38,9 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
     todayTransferExpenses,
     todayWithdrawalsTotal,
     todayExpectedCash,
+    areaSales,
+    todayConsoleSessionsCount,
+    todayProductsSoldCount,
     cashClosures,
     openCashRegister,
     addCashWithdrawal,
@@ -42,7 +49,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
 
   const [activeTab, setActiveTab] = useState<'arqueo' | 'retiro' | 'historial'>('arqueo');
 
-  // Apertura base inicial
+  // Base inicial config
   const [initialBaseInput, setInitialBaseInput] = useState<string>(
     currentCash.initialCash ? String(currentCash.initialCash) : '50000'
   );
@@ -88,7 +95,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
       alert('Por favor ingrese el efectivo contado en billetes y monedas.');
       return;
     }
-    if (!confirm('¿Está seguro de cerrar definitivamente la caja del día? Esta acción archivará los totales.')) {
+    if (!confirm('¿Está seguro de cerrar y guardar definitivamente la caja del día? Esta operación registrará el arqueo.')) {
       return;
     }
 
@@ -102,7 +109,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[92vh] shadow-2xl flex flex-col overflow-hidden border border-slate-200">
         {/* Modal Header */}
         <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-900 text-white flex items-center justify-between">
           <div className="flex items-center gap-2.5">
@@ -111,7 +118,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
             </div>
             <div>
               <h3 className="font-black text-lg sm:text-xl text-white">
-                CONTROL DE CAJA DIARIA
+                CONTROL DE CAJA & ARQUEO DIARIO
               </h3>
               <p className="text-xs text-slate-400 capitalize">{formatFullDateEs(currentCash.date)}</p>
             </div>
@@ -232,25 +239,85 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                 <span className="font-black text-sm text-blue-800">{formatCOP(todayTransferSales)}</span>
               </div>
 
-              {/* CIERRE DE CAJA ARQUEO (Prompt: Efectivo contado -> Diferencia -> 🟢 Caja Cuadrada / 🔴 Faltante / 🟠 Sobrante) */}
+              {/* CIERRE DIARIO: 16 Required Fields Display Box */}
               <div className="bg-white rounded-2xl p-4 border-2 border-emerald-600/30 shadow-xs space-y-4">
                 <div className="flex items-center gap-2">
                   <Wallet className="w-5 h-5 text-emerald-700" />
                   <h4 className="font-black text-sm uppercase tracking-wide text-slate-900">
-                    Arqueo de Cierre: Conteo de Dinero
+                    Resumen Previo al Cierre Diario
                   </h4>
+                </div>
+
+                {/* Grid with the 16 exact values from Section 25 */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs">
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">FECHA</span>
+                    <span className="font-bold text-slate-900">{todayDate}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">VENTAS TOTALES</span>
+                    <span className="font-bold text-slate-900">{formatCOP(todaySalesTotal)}</span>
+                  </div>
+                  <div>
+                    <span className="text-emerald-700 block text-[10px] uppercase font-bold">EFECTIVO</span>
+                    <span className="font-bold text-emerald-700">{formatCOP(todayCashSales)}</span>
+                  </div>
+                  <div>
+                    <span className="text-blue-700 block text-[10px] uppercase font-bold">TRANSFERENCIAS</span>
+                    <span className="font-bold text-blue-700">{formatCOP(todayTransferSales)}</span>
+                  </div>
+                  <div>
+                    <span className="text-rose-700 block text-[10px] uppercase font-bold">GASTOS TOTALES</span>
+                    <span className="font-bold text-rose-700">{formatCOP(todayExpensesTotal)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">GASTOS EFECTIVO</span>
+                    <span className="font-bold text-slate-900">{formatCOP(todayCashExpenses)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">GASTOS TRANSFERENCIA</span>
+                    <span className="font-bold text-slate-900">{formatCOP(todayTransferExpenses)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">BASE INICIAL</span>
+                    <span className="font-bold text-slate-900">{formatCOP(currentCash.initialCash)}</span>
+                  </div>
+                  <div>
+                    <span className="text-amber-800 block text-[10px] uppercase font-bold">VENTAS GARGUERÍA</span>
+                    <span className="font-bold text-amber-800">{formatCOP(areaSales.gargueria)}</span>
+                  </div>
+                  <div>
+                    <span className="text-emerald-800 block text-[10px] uppercase font-bold">VENTAS XBOX / PS</span>
+                    <span className="font-bold text-emerald-800">{formatCOP(areaSales.xbox)}</span>
+                  </div>
+                  <div>
+                    <span className="text-indigo-800 block text-[10px] uppercase font-bold">VENTAS PAPELERÍA / BEB</span>
+                    <span className="font-bold text-indigo-800">{formatCOP(areaSales.papeleria)}</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">SESIONES CONSOLA</span>
+                    <span className="font-bold text-slate-900">{todayConsoleSessionsCount} cerradas</span>
+                  </div>
+                  <div>
+                    <span className="text-slate-500 block text-[10px] uppercase font-bold">PRODUCTOS VENDIDOS</span>
+                    <span className="font-bold text-slate-900">{todayProductsSoldCount} unidades</span>
+                  </div>
+                  <div>
+                    <span className="text-emerald-900 block text-[10px] uppercase font-bold">CAJA ESPERADA</span>
+                    <span className="font-black text-emerald-700">{formatCOP(todayExpectedCash)}</span>
+                  </div>
                 </div>
 
                 <div>
                   <label className="text-xs font-bold text-slate-700 block mb-1">
-                    EFECTIVO CONTADO EN CAJA ($):
+                    EFECTIVO CONTADO EN CAJA (BILLETES Y MONEDAS) ($):
                   </label>
                   <input
                     type="number"
                     placeholder="Ingrese el valor total contado en el cajón"
                     value={countedCashInput}
                     onChange={e => setCountedCashInput(e.target.value)}
-                    className="w-full text-lg font-black bg-slate-50 border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-emerald-500 outline-none"
+                    className="w-full text-lg font-black bg-slate-50 border border-slate-300 rounded-xl p-3 focus:ring-2 focus:ring-emerald-500 outline-hidden"
                   />
                 </div>
 
@@ -266,22 +333,22 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                       </span>
                     </div>
 
-                    {/* Prominent Badge according to Prompt requirements */}
+                    {/* Prominent Badge */}
                     <div className="text-center pt-1">
                       {isDiffZero && (
-                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white font-black text-xs sm:text-sm rounded-full shadow-sm">
+                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-emerald-600 text-white font-black text-xs sm:text-sm rounded-full shadow-xs">
                           <CheckCircle2 className="w-4 h-4" />
                           <span>🟢 CAJA CUADRADA</span>
                         </span>
                       )}
                       {isMissing && (
-                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-rose-600 text-white font-black text-xs sm:text-sm rounded-full shadow-sm animate-pulse">
+                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-rose-600 text-white font-black text-xs sm:text-sm rounded-full shadow-xs animate-pulse">
                           <AlertCircle className="w-4 h-4" />
                           <span>🔴 FALTANTE DE {formatCOP(Math.abs(diff))}</span>
                         </span>
                       )}
                       {isSurplus && (
-                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 text-slate-950 font-black text-xs sm:text-sm rounded-full shadow-sm">
+                        <span className="inline-flex items-center gap-1.5 px-4 py-1.5 bg-amber-500 text-slate-950 font-black text-xs sm:text-sm rounded-full shadow-xs">
                           <span>🟠 SOBRANTE DE {formatCOP(diff)}</span>
                         </span>
                       )}
@@ -314,7 +381,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                   className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-xl text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
                 >
                   <Lock className="w-4 h-4 text-emerald-400" />
-                  <span>CERRAR DEFINITIVAMENTE LA CAJA DEL DÍA</span>
+                  <span>GUARDAR CIERRE DIARIO (NO SE PIERDE)</span>
                 </button>
               </div>
             </>
@@ -388,18 +455,18 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
           {activeTab === 'historial' && (
             <div className="space-y-3">
               <span className="text-xs font-bold uppercase text-slate-600 block">
-                Cierres Diarios Anteriores
+                Cierres Diarios Anteriores Guardados ({cashClosures.length})
               </span>
               {cashClosures.length === 0 ? (
                 <div className="text-center py-8 text-slate-400 text-xs">
-                  No hay cierres guardados aún.
+                  No hay cierres guardados aún. Al pulsar &quot;Guardar Cierre Diario&quot;, quedará archivado permanentemente aquí.
                 </div>
               ) : (
                 <div className="space-y-3">
                   {cashClosures.map(c => (
                     <div
                       key={c.id}
-                      className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-1.5"
+                      className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-xs space-y-2"
                     >
                       <div className="flex items-center justify-between">
                         <strong className="text-slate-900 font-bold capitalize">
@@ -436,6 +503,14 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                           <strong className="block font-bold">{formatCOP(c.difference)}</strong>
                         </div>
                       </div>
+
+                      {c.gargueriaSales !== undefined && (
+                        <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-slate-200 text-[10px] text-slate-500">
+                          <span>Garguería: <strong className="text-slate-700">{formatCOP(c.gargueriaSales)}</strong></span>
+                          <span>Xbox/PS: <strong className="text-slate-700">{formatCOP(c.xboxSales || 0)}</strong></span>
+                          <span>Papelería: <strong className="text-slate-700">{formatCOP(c.papeleriaSales || 0)}</strong></span>
+                        </div>
+                      )}
 
                       {c.notes && (
                         <p className="text-[11px] text-slate-500 italic pt-1 border-t border-slate-200">
