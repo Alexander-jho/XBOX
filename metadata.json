@@ -1,0 +1,6 @@
+{
+  "name": "Control de Negocio - POS y Caja",
+  "description": "Sistema POS rápido para Garguería, Xbox y Papelería con control de caja diaria, transferencias, inventario y sesiones de consolas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
