@@ -1,6 +1,6 @@
 export type BusinessArea = 'gargueria' | 'xbox' | 'papeleria';
 
-export type PaymentMethod = 'efectivo' | 'transferencia';
+export type PaymentMethod = 'efectivo' | 'transferencia' | 'credito';
 
 export type TransferProvider = 'Nequi' | 'Daviplata' | 'Bancolombia' | 'Otro';
 
@@ -16,7 +16,15 @@ export interface User {
   password?: string;
 }
 
-export type NavTab = 'dashboard' | 'xbox' | 'inventory' | 'transfers' | 'history' | 'reports' | 'settings';
+export type NavTab =
+  | 'dashboard'
+  | 'xbox'
+  | 'inventory'
+  | 'transfers'
+  | 'history'
+  | 'reports'
+  | 'credits'
+  | 'settings';
 
 export interface Product {
   id: string;
@@ -143,6 +151,9 @@ export interface Sale {
   consoleSessionId?: string;
   isExtemporaneous?: boolean;
   recordedBy?: string;
+  customerName?: string;
+  customerPhone?: string;
+  creditId?: string;
 }
 
 export interface Expense {
@@ -166,6 +177,39 @@ export interface CashWithdrawal {
   reason: string;
 }
 
+export interface CreditPayment {
+  id: string;
+  creditId: string;
+  amount: number;
+  paymentMethod: 'efectivo' | 'transferencia';
+  transferProvider?: TransferProvider;
+  transferReference?: string;
+  date: string; // YYYY-MM-DD
+  time: string; // HH:MM
+  timestamp: number;
+  receivedBy?: string;
+  notes?: string;
+}
+
+export interface CreditAccount {
+  id: string;
+  customerName: string;
+  customerPhone?: string;
+  saleId?: string;
+  saleTotal: number;
+  currentBalance: number; // remaining debt
+  paidAmount: number; // total paid so far
+  area: BusinessArea;
+  itemsSummary: string;
+  status: 'pendiente' | 'pagado';
+  createdAt: number;
+  createdDate: string; // YYYY-MM-DD
+  createdTime: string; // HH:MM
+  dueDate?: string;
+  payments: CreditPayment[];
+  notes?: string;
+}
+
 export interface CashClosure {
   id: string;
   date: string; // YYYY-MM-DD
@@ -175,6 +219,10 @@ export interface CashClosure {
   cashSales: number;
   transferSales: number;
   totalSales: number;
+  creditSalesTotal?: number;
+  creditPaymentsCash?: number;
+  creditPaymentsTransfer?: number;
+  creditPaymentsTotal?: number;
   cashExpenses: number;
   transferExpenses: number;
   totalExpenses: number;

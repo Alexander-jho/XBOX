@@ -17,6 +17,8 @@ import {
   LightMode,
   User,
   UserRole,
+  CreditAccount,
+  CreditPayment,
 } from '../types';
 import {
   INITIAL_CONSOLES,
@@ -54,6 +56,7 @@ interface AppContextType {
   todaySalesTotal: number;
   todayCashSales: number;
   todayTransferSales: number;
+  todayCreditSalesTotal: number;
   todayExpensesTotal: number;
   todayCashExpenses: number;
   todayTransferExpenses: number;
@@ -67,6 +70,42 @@ interface AppContextType {
   todayConsoleSessionsCount: number;
   todayProductsSoldCount: number;
   lowStockProducts: Product[];
+
+  // Credits / Fiados
+  credits: CreditAccount[];
+  addCreditSale: (data: {
+    customerName: string;
+    customerPhone?: string;
+    area: BusinessArea;
+    itemsSummary: string;
+    total: number;
+    notes?: string;
+    dueDate?: string;
+    saleId?: string;
+  }) => CreditAccount;
+  registerCreditPayment: (
+    creditId: string,
+    payment: {
+      amount: number;
+      paymentMethod: 'efectivo' | 'transferencia';
+      transferProvider?: TransferProvider;
+      transferReference?: string;
+      notes?: string;
+      date?: string;
+      time?: string;
+    }
+  ) => void;
+  deleteCredit: (creditId: string) => void;
+  pendingCreditsCount: number;
+  totalPendingCreditsAmount: number;
+  todayCreditPayments: CreditPayment[];
+  todayCashCreditPayments: number;
+  todayTransferCreditPayments: number;
+  todayCreditPaymentsTotal: number;
+
+  // Password Management
+  changePassword: (oldPassword: string, newPassword: string) => { success: boolean; message: string };
+  adminUpdateUserPassword: (userId: string, newPassword: string) => { success: boolean; message: string };
 
   // Operations
   registerSale: (saleData: {
@@ -91,6 +130,8 @@ interface AppContextType {
     time?: string;
     timestamp?: number;
     isExtemporaneous?: boolean;
+    customerName?: string;
+    customerPhone?: string;
   }) => Sale;
 
   // Xbox Open Account Operations
@@ -185,7 +226,40 @@ const STORAGE_KEYS = {
   CLOSURES: 'pos_control_closures_v2',
   INVENTORY_ENTRIES: 'pos_control_inventory_entries_v2',
   ACCOUNT_SEQ: 'pos_control_acc_seq_v2',
+  CREDITS: 'pos_control_credits_v2',
 };
+
+const INITIAL_CREDITS: CreditAccount[] = [
+  {
+    id: 'cred-sample-1',
+    customerName: 'Carlos Rodríguez',
+    customerPhone: '3124567890',
+    saleTotal: 15000,
+    currentBalance: 7000,
+    paidAmount: 8000,
+    area: 'papeleria',
+    itemsSummary: '2x Cuaderno Cuadriculado, 1x Resaltador Pelikan',
+    status: 'pendiente',
+    createdAt: Date.now() - 86400000 * 2,
+    createdDate: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
+    createdTime: '15:30',
+    dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
+    payments: [
+      {
+        id: 'cp-sample-1',
+        creditId: 'cred-sample-1',
+        amount: 8000,
+        paymentMethod: 'efectivo',
+        date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
+        time: '16:00',
+        timestamp: Date.now() - 86400000,
+        receivedBy: 'Operador de Turno',
+        notes: 'Abono inicial en efectivo',
+      },
+    ],
+    notes: 'Vecino del frente, abona los viernes',
+  },
+];
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const todayStr = getTodayDateString();
@@ -338,6 +412,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return saved ? parseInt(saved, 10) : 1;
   });
 
+  // 13. Credits / Fiados
+  const [credits, setCredits] = useState<CreditAccount[]>(() => {
+    const saved = localStorage.getItem(STORAGE_KEYS.CREDITS);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return INITIAL_CREDITS;
+  });
+
   // Persistence Effects
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }, [users]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser)); }, [currentUser]);
@@ -352,6 +439,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.CLOSURES, JSON.stringify(cashClosures)); }, [cashClosures]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.INVENTORY_ENTRIES, JSON.stringify(inventoryEntries)); }, [inventoryEntries]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.ACCOUNT_SEQ, accountSeq.toString()); }, [accountSeq]);
+  useEffect(() => { localStorage.setItem(STORAGE_KEYS.CREDITS, JSON.stringify(credits)); }, [credits]);
 
   // Periodic alarm checks for active Xbox sessions
   useEffect(() => {
@@ -415,6 +503,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const todaySalesTotal = useMemo(() => todaySales.reduce((sum, s) => sum + s.total, 0), [todaySales]);
   const todayCashSales = useMemo(() => todaySales.filter(s => s.paymentMethod === 'efectivo').reduce((sum, s) => sum + s.total, 0), [todaySales]);
   const todayTransferSales = useMemo(() => todaySales.filter(s => s.paymentMethod === 'transferencia').reduce((sum, s) => sum + s.total, 0), [todaySales]);
+  const todayCreditSalesTotal = useMemo(() => todaySales.filter(s => s.paymentMethod === 'credito').reduce((sum, s) => sum + s.total, 0), [todaySales]);
 
   const todayExpensesTotal = useMemo(() => todayExpenses.reduce((sum, e) => sum + e.amount, 0), [todayExpenses]);
   const todayCashExpenses = useMemo(() => todayExpenses.filter(e => e.paymentMethod === 'efectivo').reduce((sum, e) => sum + e.amount, 0), [todayExpenses]);
@@ -422,10 +511,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const todayWithdrawalsTotal = useMemo(() => currentCash.withdrawals.reduce((sum, w) => sum + w.amount, 0), [currentCash.withdrawals]);
 
+  // Credits statistics & payments today
+  const pendingCredits = useMemo(() => credits.filter(c => c.status === 'pendiente'), [credits]);
+  const pendingCreditsCount = useMemo(() => pendingCredits.length, [pendingCredits]);
+  const totalPendingCreditsAmount = useMemo(() => pendingCredits.reduce((sum, c) => sum + c.currentBalance, 0), [pendingCredits]);
+
+  const todayCreditPayments = useMemo(() => {
+    return credits
+      .flatMap(c => c.payments || [])
+      .filter(p => p.date === todayStr);
+  }, [credits, todayStr]);
+
+  const todayCashCreditPayments = useMemo(() => {
+    return todayCreditPayments
+      .filter(p => p.paymentMethod === 'efectivo')
+      .reduce((sum, p) => sum + p.amount, 0);
+  }, [todayCreditPayments]);
+
+  const todayTransferCreditPayments = useMemo(() => {
+    return todayCreditPayments
+      .filter(p => p.paymentMethod === 'transferencia')
+      .reduce((sum, p) => sum + p.amount, 0);
+  }, [todayCreditPayments]);
+
+  const todayCreditPaymentsTotal = useMemo(() => {
+    return todayCashCreditPayments + todayTransferCreditPayments;
+  }, [todayCashCreditPayments, todayTransferCreditPayments]);
+
+  // Expected Cash = Base inicial + Ventas en efectivo + Abonos a créditos en efectivo - Gastos en efectivo - Retiros
   const todayExpectedCash = useMemo(() => {
     const base = currentCash.isOpen ? currentCash.initialCash : 0;
-    return base + todayCashSales - todayCashExpenses - todayWithdrawalsTotal;
-  }, [currentCash.initialCash, currentCash.isOpen, todayCashSales, todayCashExpenses, todayWithdrawalsTotal]);
+    return base + todayCashSales + todayCashCreditPayments - todayCashExpenses - todayWithdrawalsTotal;
+  }, [currentCash.initialCash, currentCash.isOpen, todayCashSales, todayCashCreditPayments, todayCashExpenses, todayWithdrawalsTotal]);
 
   const areaSales = useMemo(() => {
     const breakdown = { gargueria: 0, xbox: 0, papeleria: 0 };
@@ -455,6 +572,112 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return products.filter(p => p.isActive && p.trackStock && p.stock <= p.minStock);
   }, [products]);
 
+  // Credits operations
+  const addCreditSale = (data: {
+    customerName: string;
+    customerPhone?: string;
+    area: BusinessArea;
+    itemsSummary: string;
+    total: number;
+    notes?: string;
+    dueDate?: string;
+    saleId?: string;
+  }): CreditAccount => {
+    const now = new Date();
+    const newCredit: CreditAccount = {
+      id: `cred-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      customerName: data.customerName.trim() || 'Cliente Fiado',
+      customerPhone: data.customerPhone?.trim(),
+      saleId: data.saleId,
+      saleTotal: data.total,
+      currentBalance: data.total,
+      paidAmount: 0,
+      area: data.area,
+      itemsSummary: data.itemsSummary || 'Venta a crédito',
+      status: 'pendiente',
+      createdAt: now.getTime(),
+      createdDate: getTodayDateString(),
+      createdTime: getCurrentTimeString(),
+      dueDate: data.dueDate,
+      payments: [],
+      notes: data.notes,
+    };
+    setCredits(prev => [newCredit, ...prev]);
+    return newCredit;
+  };
+
+  const registerCreditPayment = (
+    creditId: string,
+    paymentData: {
+      amount: number;
+      paymentMethod: 'efectivo' | 'transferencia';
+      transferProvider?: TransferProvider;
+      transferReference?: string;
+      notes?: string;
+      date?: string;
+      time?: string;
+    }
+  ) => {
+    const payDate = paymentData.date || getTodayDateString();
+    const payTime = paymentData.time || getCurrentTimeString();
+    const newPayment: CreditPayment = {
+      id: `cp-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      creditId,
+      amount: paymentData.amount,
+      paymentMethod: paymentData.paymentMethod,
+      transferProvider: paymentData.transferProvider,
+      transferReference: paymentData.transferReference,
+      date: payDate,
+      time: payTime,
+      timestamp: Date.now(),
+      receivedBy: currentUser.name || currentUser.username,
+      notes: paymentData.notes,
+    };
+
+    setCredits(prev =>
+      prev.map(c => {
+        if (c.id !== creditId) return c;
+        const newPaid = c.paidAmount + paymentData.amount;
+        const newBalance = Math.max(0, c.saleTotal - newPaid);
+        return {
+          ...c,
+          paidAmount: newPaid,
+          currentBalance: newBalance,
+          status: newBalance <= 0 ? 'pagado' : 'pendiente',
+          payments: [newPayment, ...(c.payments || [])],
+        };
+      })
+    );
+  };
+
+  const deleteCredit = (creditId: string) => {
+    setCredits(prev => prev.filter(c => c.id !== creditId));
+  };
+
+  // Password Management
+  const changePassword = (oldPassword: string, newPassword: string) => {
+    if (!currentUser.password || currentUser.password === oldPassword) {
+      const updatedUsers = users.map(u => u.id === currentUser.id ? { ...u, password: newPassword } : u);
+      const updatedCurrent = { ...currentUser, password: newPassword };
+      setUsers(updatedUsers);
+      setCurrentUser(updatedCurrent);
+      return { success: true, message: 'Contraseña actualizada exitosamente' };
+    }
+    return { success: false, message: 'La contraseña actual no coincide' };
+  };
+
+  const adminUpdateUserPassword = (userId: string, newPassword: string) => {
+    if (currentUser.role !== 'admin') {
+      return { success: false, message: 'Solo el Administrador puede modificar contraseñas de otros usuarios' };
+    }
+    const updatedUsers = users.map(u => u.id === userId ? { ...u, password: newPassword } : u);
+    setUsers(updatedUsers);
+    if (currentUser.id === userId) {
+      setCurrentUser({ ...currentUser, password: newPassword });
+    }
+    return { success: true, message: 'Contraseña actualizada exitosamente' };
+  };
+
   // Operations
   const registerSale = (saleData: {
     area: BusinessArea;
@@ -478,6 +701,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     time?: string;
     timestamp?: number;
     isExtemporaneous?: boolean;
+    customerName?: string;
+    customerPhone?: string;
   }): Sale => {
     const now = new Date();
     const saleDate = saleData.date || getTodayDateString();
@@ -489,6 +714,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         ? new Date(`${saleDate}T${saleTime.length === 5 ? saleTime + ':00' : saleTime}`).getTime()
         : now.getTime());
 
+    let newCreditId: string | undefined = undefined;
+
     const newSale: Sale = {
       id: `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
       date: saleDate,
@@ -498,6 +725,34 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       recordedBy: currentUser.name || currentUser.username,
       ...saleData,
     };
+
+    // If sale is on credit (Fiado), register the CreditAccount automatically
+    if (saleData.paymentMethod === 'credito') {
+      newCreditId = `cred-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const custName = saleData.customerName?.trim() || 'Cliente Fiado';
+      const itemsSummary = saleData.items.map(i => `${i.quantity}x ${i.name}`).join(', ');
+
+      const newCredit: CreditAccount = {
+        id: newCreditId,
+        customerName: custName,
+        customerPhone: saleData.customerPhone?.trim(),
+        saleId: newSale.id,
+        saleTotal: saleData.total,
+        currentBalance: saleData.total,
+        paidAmount: 0,
+        area: saleData.area,
+        itemsSummary: itemsSummary || 'Venta a crédito',
+        status: 'pendiente',
+        createdAt: newSale.timestamp,
+        createdDate: saleDate,
+        createdTime: saleTime,
+        payments: [],
+        notes: saleData.notes,
+      };
+
+      setCredits(prev => [newCredit, ...prev]);
+      newSale.creditId = newCreditId;
+    }
 
     // 1. Deduct inventory for tracked items (Garguería, Bebidas, Papelería con control de stock)
     setProducts(prevProducts => {
@@ -833,6 +1088,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       cashSales: todayCashSales,
       transferSales: todayTransferSales,
       totalSales: todaySalesTotal,
+      creditSalesTotal: todayCreditSalesTotal,
+      creditPaymentsCash: todayCashCreditPayments,
+      creditPaymentsTransfer: todayTransferCreditPayments,
+      creditPaymentsTotal: todayCreditPaymentsTotal,
       cashExpenses: todayCashExpenses,
       transferExpenses: todayTransferExpenses,
       totalExpenses: todayExpensesTotal,
@@ -945,6 +1204,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSales([]);
     setExpenses([]);
     setInventoryEntries([]);
+    setCredits(INITIAL_CREDITS);
     setAccountSeq(1);
     setCurrentCash({
       id: `cash-${getTodayDateString()}`,
@@ -966,6 +1226,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         switchUser,
         logoutUser,
         saveUser,
+        changePassword,
+        adminUpdateUserPassword,
         products,
         consoles,
         extraControllerRates,
@@ -980,6 +1242,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         todaySalesTotal,
         todayCashSales,
         todayTransferSales,
+        todayCreditSalesTotal,
         todayExpensesTotal,
         todayCashExpenses,
         todayTransferExpenses,
@@ -989,6 +1252,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         todayConsoleSessionsCount,
         todayProductsSoldCount,
         lowStockProducts,
+        credits,
+        addCreditSale,
+        registerCreditPayment,
+        deleteCredit,
+        pendingCreditsCount,
+        totalPendingCreditsAmount,
+        todayCreditPayments,
+        todayCashCreditPayments,
+        todayTransferCreditPayments,
+        todayCreditPaymentsTotal,
         registerSale,
         startXboxSession,
         addTimeToSession,

@@ -44,6 +44,8 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
     todayTransferExpenses,
     todayWithdrawalsTotal,
     todayExpectedCash,
+    todayCashCreditPayments,
+    todayTransferCreditPayments,
     areaSales,
     todayConsoleSessionsCount,
     todayProductsSoldCount,
@@ -291,6 +293,11 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                   <strong className="font-bold">{formatCOP(todayCashSales)}</strong>
                 </div>
 
+                <div className="flex items-center justify-between text-xs sm:text-sm text-emerald-800">
+                  <span className="font-medium">(+) Abonos a crédito / Pago de deuda (Efectivo):</span>
+                  <strong className="font-bold">{formatCOP(todayCashCreditPayments)}</strong>
+                </div>
+
                 <div className="flex items-center justify-between text-xs sm:text-sm text-rose-800">
                   <span className="font-medium">(−) Gastos en Efectivo:</span>
                   <strong className="font-bold">{formatCOP(todayCashExpenses)}</strong>
@@ -392,6 +399,10 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                   <div>
                     <span className="text-emerald-900 block text-[10px] uppercase font-bold">CAJA ESPERADA</span>
                     <span className="font-black text-emerald-700">{formatCOP(todayExpectedCash)}</span>
+                  </div>
+                  <div>
+                    <span className="text-amber-800 block text-[10px] uppercase font-bold">ABONO A CRÉDITO (PAGO DEUDA)</span>
+                    <span className="font-bold text-amber-800">{formatCOP(todayCashCreditPayments + todayTransferCreditPayments)}</span>
                   </div>
                 </div>
 

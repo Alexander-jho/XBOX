@@ -11,6 +11,7 @@ import { InventoryManager } from './components/InventoryManager';
 import { SalesHistoryView } from './components/SalesHistoryView';
 import { ReportsView } from './components/ReportsView';
 import { ConfigView } from './components/ConfigView';
+import { CreditsView } from './components/CreditsView';
 import { LoginModal } from './components/LoginModal';
 import { NavTab, BusinessArea } from './types';
 import { Lock, ShieldCheck } from 'lucide-react';
@@ -111,6 +112,8 @@ const MainLayout: React.FC = () => {
             {currentTab === 'inventory' && <InventoryManager />}
 
             {currentTab === 'transfers' && <TransfersView />}
+
+            {currentTab === 'credits' && <CreditsView />}
 
             {currentTab === 'history' && <SalesHistoryView />}
 

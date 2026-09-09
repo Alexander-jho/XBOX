@@ -21,6 +21,7 @@ import {
   Check,
   CalendarClock,
   ShieldAlert,
+  CreditCard,
 } from 'lucide-react';
 import {
   formatCOP,
@@ -29,13 +30,14 @@ import {
   BANK_ACCOUNT_NOTICE,
   BANK_ACCOUNT_NUMBER,
 } from '../utils/formatters';
+import { NavTab } from '../types';
 
 interface DashboardProps {
   onOpenNewSale: (initialArea?: 'gargueria' | 'xbox' | 'papeleria') => void;
   onOpenXboxSessionModal: () => void;
   onOpenExpenseModal: () => void;
   onOpenCashModal: () => void;
-  onNavigateTab: (tab: 'dashboard' | 'xbox' | 'inventory' | 'transfers' | 'history' | 'reports' | 'settings') => void;
+  onNavigateTab: (tab: NavTab) => void;
   onSelectConsole?: (consoleId: string) => void;
 }
 
@@ -59,6 +61,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
     currentCash,
     currentUser,
     consoles,
+    totalPendingCreditBalance,
+    pendingCreditsCount,
   } = useApp();
 
   const [copiedBank, setCopiedBank] = useState(false);
@@ -267,6 +271,52 @@ export const Dashboard: React.FC<DashboardProps> = ({
             Arqueo / Cierre
           </button>
         </div>
+      </div>
+
+      {/* Módulo de Créditos / Fiados Resumen */}
+      <div
+        onClick={() => onNavigateTab('credits')}
+        className="bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200/90 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4 cursor-pointer hover:border-amber-300 hover:shadow-sm transition-all"
+      >
+        <div className="flex items-center gap-3.5">
+          <div className="w-12 h-12 rounded-xl bg-amber-500/20 text-amber-700 flex items-center justify-center shrink-0 border border-amber-300/60">
+            <CreditCard className="w-6 h-6" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-black uppercase tracking-wider text-amber-800">
+                Créditos Abiertos (Fiados / Cuentas por Cobrar)
+              </span>
+              {pendingCreditsCount > 0 ? (
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-black bg-amber-400 text-slate-950 animate-pulse">
+                  {pendingCreditsCount} pendientes
+                </span>
+              ) : (
+                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-emerald-100 text-emerald-800">
+                  Al día
+                </span>
+              )}
+            </div>
+            <div className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mt-0.5">
+              {formatCOP(totalPendingCreditBalance)}
+            </div>
+            <span className="text-xs text-amber-900/80 font-medium">
+              Total por cobrar a clientes registrados
+            </span>
+          </div>
+        </div>
+
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onNavigateTab('credits');
+          }}
+          className="w-full sm:w-auto px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 text-xs font-black transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+        >
+          <CreditCard className="w-3.5 h-3.5" />
+          <span>Ver Cuentas y Abonar</span>
+          <ChevronRight className="w-3.5 h-3.5" />
+        </button>
       </div>
 
       {/* Ventas por Área */}

@@ -83,6 +83,9 @@ export const SalesModal: React.FC<SalesModalProps> = ({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('efectivo');
   const [transferProvider, setTransferProvider] = useState<TransferProvider>('Nequi');
   const [transferReference, setTransferReference] = useState('');
+  const [creditCustomerName, setCreditCustomerName] = useState('');
+  const [creditCustomerPhone, setCreditCustomerPhone] = useState('');
+  const [creditDueDate, setCreditDueDate] = useState('');
   const [cashGiven, setCashGiven] = useState<string>('');
   const [saleNotes, setSaleNotes] = useState('');
 
@@ -215,6 +218,11 @@ export const SalesModal: React.FC<SalesModalProps> = ({
       return;
     }
 
+    if (paymentMethod === 'credito' && !creditCustomerName.trim()) {
+      alert('Por favor ingrese el nombre del cliente para registrar la venta a crédito.');
+      return;
+    }
+
     registerSale({
       area: selectedArea,
       items: cart,
@@ -224,6 +232,8 @@ export const SalesModal: React.FC<SalesModalProps> = ({
       transferReference: paymentMethod === 'transferencia' ? transferReference : undefined,
       cashGiven: paymentMethod === 'efectivo' && parsedCashGiven > 0 ? parsedCashGiven : undefined,
       change: paymentMethod === 'efectivo' && parsedCashGiven > 0 ? cashChange : undefined,
+      customerName: paymentMethod === 'credito' ? creditCustomerName.trim() : undefined,
+      customerPhone: paymentMethod === 'credito' ? creditCustomerPhone.trim() || undefined : undefined,
       notes: saleNotes.trim() || undefined,
       date: isExtemporaneous && isAdmin ? customSaleDate : undefined,
       time: isExtemporaneous && isAdmin ? customSaleTime : undefined,
@@ -233,7 +243,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
     setSuccessMessage(
       `¡Venta de ${formatCOP(cartTotal)} registrada con éxito ${
         isExtemporaneous && isAdmin ? `para la fecha ${customSaleDate}` : ''
-      } en ${paymentMethod.toUpperCase()}!`
+      } en ${paymentMethod === 'credito' ? `CRÉDITO (a nombre de ${creditCustomerName})` : paymentMethod.toUpperCase()}!`
     );
     setTimeout(() => {
       setSuccessMessage(null);
@@ -241,6 +251,9 @@ export const SalesModal: React.FC<SalesModalProps> = ({
       setCart([]);
       setCashGiven('');
       setTransferReference('');
+      setCreditCustomerName('');
+      setCreditCustomerPhone('');
+      setCreditDueDate('');
       setSaleNotes('');
       setIsExtemporaneous(false);
       onClose();
@@ -693,23 +706,23 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                 Paso 2: Medio de Pago Obligatorio
               </label>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {/* 🟢 EFECTIVO */}
                 <button
                   id="pay-method-efectivo"
                   type="button"
                   onClick={() => setPaymentMethod('efectivo')}
-                  className={`p-3 rounded-xl font-black text-sm flex flex-col items-center justify-center gap-1 cursor-pointer transition-all border-2 ${
+                  className={`p-2.5 rounded-xl font-black text-xs flex flex-col items-center justify-center gap-1 cursor-pointer transition-all border-2 ${
                     paymentMethod === 'efectivo'
                       ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-500/30'
                       : 'bg-white text-emerald-800 border-emerald-200 hover:bg-emerald-50'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                     <span>🟢 EFECTIVO</span>
                   </div>
-                  <span className="text-[10px] font-normal opacity-90">Entra a caja física</span>
+                  <span className="text-[9px] font-normal opacity-90">Entra a caja</span>
                 </button>
 
                 {/* 🔵 TRANSFERENCIA */}
@@ -717,17 +730,35 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                   id="pay-method-transferencia"
                   type="button"
                   onClick={() => setPaymentMethod('transferencia')}
-                  className={`p-3 rounded-xl font-black text-sm flex flex-col items-center justify-center gap-1 cursor-pointer transition-all border-2 ${
+                  className={`p-2.5 rounded-xl font-black text-xs flex flex-col items-center justify-center gap-1 cursor-pointer transition-all border-2 ${
                     paymentMethod === 'transferencia'
                       ? 'bg-blue-600 text-white border-blue-600 shadow-md ring-2 ring-blue-500/30'
                       : 'bg-white text-blue-800 border-blue-200 hover:bg-blue-50'
                   }`}
                 >
-                  <div className="flex items-center gap-1.5">
-                    <span className="w-2.5 h-2.5 rounded-full bg-blue-300" />
-                    <span>🔵 TRANSFERENCIA</span>
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-blue-300" />
+                    <span>🔵 TRANSF.</span>
                   </div>
-                  <span className="text-[10px] font-normal opacity-90">No entra a caja</span>
+                  <span className="text-[9px] font-normal opacity-90">Consignación</span>
+                </button>
+
+                {/* 🟡 CRÉDITO / FIADO */}
+                <button
+                  id="pay-method-credito"
+                  type="button"
+                  onClick={() => setPaymentMethod('credito')}
+                  className={`p-2.5 rounded-xl font-black text-xs flex flex-col items-center justify-center gap-1 cursor-pointer transition-all border-2 ${
+                    paymentMethod === 'credito'
+                      ? 'bg-amber-500 text-slate-950 border-amber-600 shadow-md ring-2 ring-amber-500/30'
+                      : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span>🟡 FIADO / CRÉDITO</span>
+                  </div>
+                  <span className="text-[9px] font-normal opacity-90">Por cobrar</span>
                 </button>
               </div>
 
@@ -783,6 +814,47 @@ export const SalesModal: React.FC<SalesModalProps> = ({
                       className="w-full bg-white border border-blue-300 rounded-lg p-2 text-xs font-mono font-medium focus:ring-2 focus:ring-blue-500 outline-none"
                     />
                   </div>
+                </div>
+              ) : paymentMethod === 'credito' ? (
+                <div className="bg-amber-50/90 p-3 rounded-xl border border-amber-200 space-y-2.5 text-xs">
+                  <div className="font-black text-amber-950 flex items-center gap-1.5">
+                    <span>Datos del Cliente para el Fiado</span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div>
+                      <label className="font-bold text-amber-900 block mb-1">Nombre del Cliente: *</label>
+                      <input
+                        type="text"
+                        placeholder="Ej. Andrés Ramírez"
+                        value={creditCustomerName}
+                        onChange={e => setCreditCustomerName(e.target.value)}
+                        className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="font-bold text-amber-900 block mb-1">Teléfono (Opcional):</label>
+                      <input
+                        type="tel"
+                        placeholder="Ej. 3158765432"
+                        value={creditCustomerPhone}
+                        onChange={e => setCreditCustomerPhone(e.target.value)}
+                        className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="font-bold text-amber-900 block mb-1">Fecha compromiso de pago (Opcional):</label>
+                    <input
+                      type="date"
+                      value={creditDueDate}
+                      onChange={e => setCreditDueDate(e.target.value)}
+                      className="w-full bg-white border border-amber-300 rounded-lg p-2 text-xs font-semibold focus:ring-2 focus:ring-amber-500 outline-none"
+                    />
+                  </div>
+                  <p className="text-[11px] text-amber-800">
+                    ℹ️ Esta venta quedará registrada en el módulo de <strong>Créditos Abiertos (Fiados)</strong> a nombre de este cliente. No sumará dinero a caja hasta que se registre un abono.
+                  </p>
                 </div>
               ) : (
                 <div className="bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200 text-xs space-y-1.5">

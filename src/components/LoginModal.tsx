@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
-import { User, UserRole } from '../types';
-import { ShieldCheck, UserCheck, Lock, X, Check, KeyRound } from 'lucide-react';
+import { UserRole } from '../types';
+import { ShieldCheck, X, Check, KeyRound, Eye, EyeOff } from 'lucide-react';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -16,10 +16,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
   requiredRole,
   onSuccess,
 }) => {
-  const { users, currentUser, switchUser, loginUser } = useApp();
+  const { users, currentUser, loginUser } = useApp();
 
   const [selectedUsername, setSelectedUsername] = useState<string>(currentUser.username);
   const [password, setPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string>('');
 
   if (!isOpen) return null;
@@ -28,9 +29,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     e.preventDefault();
     setErrorMsg('');
 
+    if (!password.trim()) {
+      setErrorMsg('Por favor ingrese su contraseña.');
+      return;
+    }
+
     const res = loginUser(selectedUsername, password);
     if (!res.success) {
-      setErrorMsg(res.message || 'Credenciales inválidas');
+      setErrorMsg(res.message || 'Contraseña incorrecta');
       return;
     }
 
@@ -46,12 +52,6 @@ export const LoginModal: React.FC<LoginModalProps> = ({
     onClose();
   };
 
-  const handleQuickSwitch = (u: User) => {
-    switchUser(u.username);
-    if (onSuccess) onSuccess();
-    onClose();
-  };
-
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
       <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-5">
@@ -62,10 +62,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             </div>
             <div>
               <h3 className="text-base font-black text-slate-900">
-                {requiredRole === 'admin' ? 'Acceso de Administrador' : 'Cambiar de Usuario'}
+                {requiredRole === 'admin' ? 'Acceso de Administrador' : 'Autenticación de Usuario'}
               </h3>
               <p className="text-xs text-slate-500">
-                Seleccione el rol o ingrese sus credenciales
+                Seleccione su usuario e ingrese su contraseña secreta
               </p>
             </div>
           </div>
@@ -77,10 +77,10 @@ export const LoginModal: React.FC<LoginModalProps> = ({
           </button>
         </div>
 
-        {/* Quick User Cards */}
+        {/* User Selection Cards */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-            Usuarios del Sistema
+            Seleccione el Usuario
           </label>
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
@@ -105,7 +105,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   type="button"
                   onClick={() => {
                     setSelectedUsername(u.username);
-                    setPassword(u.password || '');
+                    setPassword('');
+                    setErrorMsg('');
                   }}
                   className={`p-3 rounded-2xl border text-left transition-all cursor-pointer ${
                     selectedUsername === u.username
@@ -122,8 +123,8 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                   <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${roleBadgeColor}`}>
                     {roleLabel}
                   </span>
-                  <span className="block text-[10px] text-slate-400 font-mono mt-1">
-                    clave: {u.password}
+                  <span className="block text-[10px] text-slate-400 mt-1">
+                    @{u.username}
                   </span>
                 </button>
               );
@@ -135,24 +136,30 @@ export const LoginModal: React.FC<LoginModalProps> = ({
         <form onSubmit={handleLogin} className="space-y-3 pt-2">
           <div>
             <label className="text-xs font-bold text-slate-700 block mb-1">
-              Contraseña
+              Contraseña Secreta
             </label>
             <div className="relative">
               <KeyRound className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
               <input
-                type="password"
-                placeholder="Ingrese contraseña"
+                type={showPassword ? 'text' : 'password'}
+                placeholder="Ingrese su clave secreta"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-hidden focus:bg-white focus:ring-2 focus:ring-emerald-500"
+                autoComplete="current-password"
+                className="w-full pl-9 pr-10 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-hidden focus:bg-white focus:ring-2 focus:ring-emerald-500"
               />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600 cursor-pointer"
+                title={showPassword ? 'Ocultar contraseña' : 'Ver contraseña'}
+              >
+                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              </button>
             </div>
-            <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 text-[10px] text-slate-600 space-y-0.5 mt-2">
-              <span className="font-bold block text-slate-700">Credenciales del sistema:</span>
-              <div>• <strong>admin:</strong> admin (Acceso total y ventas extemporáneas)</div>
-              <div>• <strong>operador:</strong> operador (Gestión diaria, consolas, inventario)</div>
-              <div>• <strong>cajero:</strong> cajero (Ventas diarias y reportes básicos)</div>
-            </div>
+            <p className="text-[11px] text-slate-400 mt-1.5">
+              Cada perfil debe ingresar manualmente su contraseña para acceder.
+            </p>
           </div>
 
           {errorMsg && (

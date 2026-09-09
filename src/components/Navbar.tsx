@@ -16,6 +16,7 @@ import {
   Menu,
   X,
   PlusCircle,
+  CreditCard,
 } from 'lucide-react';
 import { formatFullDateEs, formatCOP } from '../utils/formatters';
 
@@ -34,7 +35,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCash,
   onOpenLoginModal,
 }) => {
-  const { activeSessions, lowStockProducts, todayExpectedCash, currentUser } = useApp();
+  const { activeSessions, lowStockProducts, todayExpectedCash, currentUser, pendingCreditsCount } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleTabClick = (tab: NavTab) => {
@@ -108,6 +109,24 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <ArrowRightLeft className="w-3.5 h-3.5 text-blue-400" />
               <span>Transferencias</span>
+            </button>
+
+            <button
+              id="nav-tab-credits"
+              onClick={() => handleTabClick('credits')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-colors cursor-pointer relative ${
+                currentTab === 'credits'
+                  ? 'bg-amber-500 text-slate-950 font-black shadow-xs'
+                  : 'text-amber-300 hover:bg-slate-800 hover:text-amber-200'
+              }`}
+            >
+              <CreditCard className="w-3.5 h-3.5 text-amber-400" />
+              <span>Créditos (Fiados)</span>
+              {pendingCreditsCount > 0 && (
+                <span className="px-1.5 py-0.2 bg-amber-400 text-slate-950 rounded-full text-[10px] font-black">
+                  {pendingCreditsCount}
+                </span>
+              )}
             </button>
 
             <button
@@ -260,6 +279,23 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             <ArrowRightLeft className="w-4 h-4 text-blue-400" />
             <span>Transferencias</span>
+          </button>
+
+          <button
+            onClick={() => handleTabClick('credits')}
+            className={`w-full p-2.5 rounded-xl text-xs font-bold flex items-center justify-between ${
+              currentTab === 'credits' ? 'bg-amber-500 text-slate-950 font-black' : 'text-amber-300 hover:bg-slate-800'
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <CreditCard className="w-4 h-4 text-amber-400" />
+              <span>Créditos (Fiados / Por Cobrar)</span>
+            </div>
+            {pendingCreditsCount > 0 && (
+              <span className="px-2 py-0.5 rounded-full bg-amber-400 text-slate-950 text-[10px] font-black">
+                {pendingCreditsCount} pendientes
+              </span>
+            )}
           </button>
 
           <button

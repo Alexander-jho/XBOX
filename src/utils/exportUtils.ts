@@ -1,6 +1,6 @@
 import * as XLSX from 'xlsx';
 import { jsPDF } from 'jspdf';
-import { Sale, Expense, ClosedConsoleSession, CashWithdrawal } from '../types';
+import { Sale, Expense, ClosedConsoleSession, CashWithdrawal, CreditAccount, CreditPayment } from '../types';
 import { formatCOP, BANK_ACCOUNT_NOTICE } from './formatters';
 
 export interface ExportDataParams {
@@ -15,6 +15,8 @@ export interface ExportDataParams {
   cashWithdrawals?: CashWithdrawal[];
   closureNotes?: string;
   operatorName?: string;
+  credits?: CreditAccount[];
+  creditPayments?: CreditPayment[];
 }
 
 export function exportToExcel({
