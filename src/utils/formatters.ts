@@ -93,3 +93,8 @@ export const playAlertSound = (type: 'warning' | 'finish' = 'finish') => {
     console.warn('Audio alert not available in iframe or without user gesture', err);
   }
 };
+
+// Fixed business bank transfer notice
+export const BANK_ACCOUNT_NUMBER = '3188287279';
+export const BANK_ACCOUNT_NOTICE = 'La cuenta bancaria para consignar es 3188287279';
+

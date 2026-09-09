@@ -83,9 +83,22 @@ export const LoginModal: React.FC<LoginModalProps> = ({
             Usuarios del Sistema
           </label>
 
-          <div className="grid grid-cols-2 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             {users.map(u => {
               const isActive = currentUser.id === u.id;
+              const roleLabel =
+                u.role === 'admin'
+                  ? 'Administrador'
+                  : u.role === 'operador'
+                  ? 'Operador'
+                  : 'Cajero';
+              const roleBadgeColor =
+                u.role === 'admin'
+                  ? 'bg-indigo-100 text-indigo-800'
+                  : u.role === 'operador'
+                  ? 'bg-amber-100 text-amber-900'
+                  : 'bg-emerald-100 text-emerald-800';
+
               return (
                 <button
                   key={u.id}
@@ -106,10 +119,11 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                       <span className="w-2 h-2 rounded-full bg-emerald-500" title="Sesión activa" />
                     )}
                   </div>
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${
-                    u.role === 'admin' ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-100 text-slate-700'
-                  }`}>
-                    {u.role === 'admin' ? 'Administrador' : 'Cajero'}
+                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-md ${roleBadgeColor}`}>
+                    {roleLabel}
+                  </span>
+                  <span className="block text-[10px] text-slate-400 font-mono mt-1">
+                    clave: {u.password}
                   </span>
                 </button>
               );
@@ -133,9 +147,12 @@ export const LoginModal: React.FC<LoginModalProps> = ({
                 className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 outline-hidden focus:bg-white focus:ring-2 focus:ring-emerald-500"
               />
             </div>
-            <p className="text-[10px] text-slate-400 mt-1">
-              (Por defecto: admin: <span className="font-bold text-slate-600">admin</span> / cajero: <span className="font-bold text-slate-600">cajero</span>)
-            </p>
+            <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 text-[10px] text-slate-600 space-y-0.5 mt-2">
+              <span className="font-bold block text-slate-700">Credenciales del sistema:</span>
+              <div>• <strong>admin:</strong> admin (Acceso total y ventas extemporáneas)</div>
+              <div>• <strong>operador:</strong> operador (Gestión diaria, consolas, inventario)</div>
+              <div>• <strong>cajero:</strong> cajero (Ventas diarias y reportes básicos)</div>
+            </div>
           </div>
 
           {errorMsg && (

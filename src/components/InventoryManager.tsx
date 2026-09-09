@@ -14,6 +14,10 @@ import {
   TrendingDown,
   Filter,
   X,
+  Plus,
+  Minus,
+  DollarSign,
+  BookOpen,
 } from 'lucide-react';
 import { formatCOP, getTodayDateString } from '../utils/formatters';
 
@@ -24,6 +28,8 @@ export const InventoryManager: React.FC = () => {
     saveProduct,
     deleteOrDeactivateProduct,
     addInventoryEntry,
+    updateProductPrice,
+    updateProductStock,
   } = useApp();
 
   // Filters
@@ -36,7 +42,16 @@ export const InventoryManager: React.FC = () => {
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
+  // Quick Edit Price Modal
+  const [quickPriceProduct, setQuickPriceProduct] = useState<Product | null>(null);
+  const [newPriceInput, setNewPriceInput] = useState<string>('');
+
+  // Quick Edit Stock Modal
+  const [quickStockProduct, setQuickStockProduct] = useState<Product | null>(null);
+  const [newStockInput, setNewStockInput] = useState<string>('');
+
   // Form State for + Entrada de Inventario (Item 13 in Prompt)
+  const [entryAreaFilter, setEntryAreaFilter] = useState<string>('todos');
   const [entryProductId, setEntryProductId] = useState<string>('');
   const [entryQuantity, setEntryQuantity] = useState<string>('10');
   const [entryUnitCost, setEntryUnitCost] = useState<string>('');
@@ -264,10 +279,10 @@ export const InventoryManager: React.FC = () => {
             <button
               onClick={() => setFilterArea('papeleria')}
               className={`px-3 py-2 rounded-lg cursor-pointer transition-colors whitespace-nowrap ${
-                filterArea === 'papeleria' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                filterArea === 'papeleria' ? 'bg-indigo-600 text-white font-bold' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
               }`}
             >
-              📚 Papelería
+              📚 Papelería ({products.filter(p => p.area === 'papeleria').length})
             </button>
           </div>
 
@@ -301,6 +316,29 @@ export const InventoryManager: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {/* Papelería Special Guidance Banner */}
+        {filterArea === 'papeleria' && (
+          <div className="mt-3 p-3 bg-indigo-50/80 border border-indigo-200 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2 text-indigo-950">
+              <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
+              <span>
+                <strong>Gestión de Inventario de Papelería:</strong> Puede modificar los precios directamente con el icono de lápiz (<Edit2 className="w-3 h-3 inline text-slate-600" />) y registrar compras o ajustar stock con los botones <strong>+</strong> y <strong>-</strong>.
+              </span>
+            </div>
+            <button
+              onClick={() => {
+                setEntryAreaFilter('papeleria');
+                const firstPap = products.find(p => p.area === 'papeleria');
+                if (firstPap) setEntryProductId(firstPap.id);
+                setShowEntryModal(true);
+              }}
+              className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-lg shrink-0 cursor-pointer shadow-2xs"
+            >
+              + Entrada Papelería
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Inventory Table (Item 12 in Prompt) */}
@@ -351,11 +389,40 @@ export const InventoryManager: React.FC = () => {
                       <span className="text-[11px] text-slate-400">{p.category}</span>
                     </td>
 
-                    <td className="py-3 px-4 text-center font-mono font-black text-sm">
+                    {/* Stock Column with Quick Increment/Decrement Buttons */}
+                    <td className="py-3 px-4 text-center">
                       {p.trackStock ? (
-                        <span className={isOutOfStock ? 'text-rose-600 font-black' : isLowStock ? 'text-amber-600 font-black' : 'text-slate-900'}>
-                          {p.stock}
-                        </span>
+                        <div className="inline-flex items-center justify-center gap-1.5 bg-slate-50 px-2 py-1 rounded-lg border border-slate-200">
+                          <button
+                            type="button"
+                            onClick={() => updateProductStock(p.id, Math.max(0, p.stock - 1))}
+                            title="Disminuir 1 unidad de stock"
+                            className="w-5 h-5 rounded bg-white hover:bg-slate-200 text-slate-700 font-black text-xs flex items-center justify-center border border-slate-200 cursor-pointer active:scale-95"
+                          >
+                            -
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setQuickStockProduct(p);
+                              setNewStockInput(String(p.stock));
+                            }}
+                            title="Haga clic para editar cantidad exacta de stock"
+                            className={`font-black font-mono text-xs sm:text-sm px-1.5 py-0.5 rounded hover:bg-slate-200 cursor-pointer ${
+                              isOutOfStock ? 'text-rose-600 font-black' : isLowStock ? 'text-amber-600 font-black' : 'text-slate-900'
+                            }`}
+                          >
+                            {p.stock}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateProductStock(p.id, p.stock + 1)}
+                            title="Aumentar 1 unidad de stock"
+                            className="w-5 h-5 rounded bg-white hover:bg-slate-200 text-slate-700 font-black text-xs flex items-center justify-center border border-slate-200 cursor-pointer active:scale-95"
+                          >
+                            +
+                          </button>
+                        </div>
                       ) : (
                         <span className="text-slate-400 text-xs font-normal">Ilimitado</span>
                       )}
@@ -365,8 +432,32 @@ export const InventoryManager: React.FC = () => {
                       {p.trackStock ? p.minStock : '—'}
                     </td>
 
-                    <td className="py-3 px-4 text-right font-black text-emerald-700">
-                      {formatCOP(p.price)}
+                    {/* Quick Price Adjustment Column */}
+                    <td className="py-3 px-4 text-right">
+                      <div className="inline-flex items-center justify-end gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickPriceProduct(p);
+                            setNewPriceInput(String(p.price));
+                          }}
+                          title="Haga clic para modificar precio de venta"
+                          className="font-black font-mono text-emerald-700 hover:text-emerald-900 hover:underline cursor-pointer"
+                        >
+                          {formatCOP(p.price)}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setQuickPriceProduct(p);
+                            setNewPriceInput(String(p.price));
+                          }}
+                          title="Modificar precio"
+                          className="p-1 rounded bg-slate-100 hover:bg-emerald-100 hover:text-emerald-800 text-slate-500 cursor-pointer transition-colors"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                        </button>
+                      </div>
                     </td>
 
                     <td className="py-3 px-4 text-right text-slate-500 text-xs font-medium">
@@ -451,17 +542,52 @@ export const InventoryManager: React.FC = () => {
 
               {/* Producto */}
               <div>
-                <label className="text-xs font-bold text-slate-700 block mb-1">Producto: *</label>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs font-bold text-slate-700">Producto: *</label>
+                  <div className="flex gap-1 text-[10px] font-bold">
+                    <button
+                      type="button"
+                      onClick={() => setEntryAreaFilter('todos')}
+                      className={`px-2 py-0.5 rounded cursor-pointer ${entryAreaFilter === 'todos' ? 'bg-slate-800 text-white' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      Todos
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEntryAreaFilter('gargueria');
+                        const f = products.find(p => p.area === 'gargueria');
+                        if (f) setEntryProductId(f.id);
+                      }}
+                      className={`px-2 py-0.5 rounded cursor-pointer ${entryAreaFilter === 'gargueria' ? 'bg-amber-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      🍔 Garguería
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEntryAreaFilter('papeleria');
+                        const f = products.find(p => p.area === 'papeleria');
+                        if (f) setEntryProductId(f.id);
+                      }}
+                      className={`px-2 py-0.5 rounded cursor-pointer ${entryAreaFilter === 'papeleria' ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-600'}`}
+                    >
+                      📚 Papelería
+                    </button>
+                  </div>
+                </div>
                 <select
                   value={entryProductId}
                   onChange={e => setEntryProductId(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-xs font-bold text-slate-800"
                 >
-                  {products.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name} {p.presentation ? `(${p.presentation})` : ''} — Stock actual: {p.stock}
-                    </option>
-                  ))}
+                  {products
+                    .filter(p => entryAreaFilter === 'todos' || p.area === entryAreaFilter)
+                    .map(p => (
+                      <option key={p.id} value={p.id}>
+                        [{p.area === 'gargueria' ? 'Garguería' : 'Papelería'}] {p.name} {p.presentation ? `(${p.presentation})` : ''} — Stock actual: {p.stock}
+                      </option>
+                    ))}
                 </select>
               </div>
 
@@ -696,6 +822,174 @@ export const InventoryManager: React.FC = () => {
                   className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer"
                 >
                   Guardar Producto
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: MODIFICAR PRECIO RÁPIDO */}
+      {quickPriceProduct && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in">
+            <div className="p-4 bg-emerald-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <DollarSign className="w-5 h-5" />
+                <h3 className="font-bold text-base">Modificar Precio de Venta</h3>
+              </div>
+              <button
+                onClick={() => setQuickPriceProduct(null)}
+                className="w-8 h-8 rounded-lg hover:bg-emerald-700 text-white flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                const cleanPrice = parseFloat(newPriceInput.replace(/\D/g, '')) || 0;
+                updateProductPrice(quickPriceProduct.id, cleanPrice);
+                setQuickPriceProduct(null);
+              }}
+              className="p-5 space-y-4"
+            >
+              <div>
+                <span className="text-xs text-slate-500 block">Producto:</span>
+                <strong className="text-sm text-slate-900 block font-bold">
+                  {quickPriceProduct.name} {quickPriceProduct.presentation ? `(${quickPriceProduct.presentation})` : ''}
+                </strong>
+                <span className="text-xs text-indigo-600 font-semibold block capitalize">
+                  Área: {quickPriceProduct.area === 'papeleria' ? 'Papelería' : 'Garguería'}
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Nuevo Precio de Venta ($ COP):
+                </label>
+                <input
+                  type="number"
+                  autoFocus
+                  value={newPriceInput}
+                  onChange={e => setNewPriceInput(e.target.value)}
+                  placeholder="Ej. 2500"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-lg font-black text-emerald-700 focus:ring-2 focus:ring-emerald-500 outline-none"
+                />
+              </div>
+
+              {/* Quick increment buttons */}
+              <div className="flex flex-wrap gap-1.5 text-xs">
+                {[500, 1000, 1500, 2000, 2500, 5000].map(val => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setNewPriceInput(String(val))}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold cursor-pointer"
+                  >
+                    ${val}
+                  </button>
+                ))}
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickPriceProduct(null)}
+                  className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer"
+                >
+                  Actualizar Precio
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: AJUSTAR STOCK RÁPIDO */}
+      {quickStockProduct && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4">
+          <div className="bg-white rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden border border-slate-200 animate-in fade-in">
+            <div className="p-4 bg-indigo-600 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Package className="w-5 h-5" />
+                <h3 className="font-bold text-base">Ajustar Stock Disponible</h3>
+              </div>
+              <button
+                onClick={() => setQuickStockProduct(null)}
+                className="w-8 h-8 rounded-lg hover:bg-indigo-700 text-white flex items-center justify-center cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form
+              onSubmit={e => {
+                e.preventDefault();
+                const cleanStock = parseInt(newStockInput.replace(/\D/g, '')) || 0;
+                updateProductStock(quickStockProduct.id, cleanStock);
+                setQuickStockProduct(null);
+              }}
+              className="p-5 space-y-4"
+            >
+              <div>
+                <span className="text-xs text-slate-500 block">Producto:</span>
+                <strong className="text-sm text-slate-900 block font-bold">
+                  {quickStockProduct.name} {quickStockProduct.presentation ? `(${quickStockProduct.presentation})` : ''}
+                </strong>
+                <span className="text-xs text-slate-500 block">
+                  Stock actual en sistema: <span className="font-bold text-slate-900">{quickStockProduct.stock}</span>
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  Nueva Cantidad en Inventario:
+                </label>
+                <input
+                  type="number"
+                  autoFocus
+                  value={newStockInput}
+                  onChange={e => setNewStockInput(e.target.value)}
+                  placeholder="Ej. 15"
+                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-lg font-black text-indigo-700 focus:ring-2 focus:ring-indigo-500 outline-none"
+                />
+              </div>
+
+              {/* Quick stock shortcuts */}
+              <div className="flex flex-wrap gap-1.5 text-xs">
+                {[0, 5, 10, 15, 20, 30, 50, 100].map(val => (
+                  <button
+                    key={val}
+                    type="button"
+                    onClick={() => setNewStockInput(String(val))}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg font-semibold cursor-pointer"
+                  >
+                    {val} uds
+                  </button>
+                ))}
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setQuickStockProduct(null)}
+                  className="px-4 py-2 text-slate-600 font-bold hover:bg-slate-100 rounded-xl text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer"
+                >
+                  Guardar Stock
                 </button>
               </div>
             </form>

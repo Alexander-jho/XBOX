@@ -87,6 +87,10 @@ interface AppContextType {
     change?: number;
     notes?: string;
     consoleSessionId?: string;
+    date?: string;
+    time?: string;
+    timestamp?: number;
+    isExtemporaneous?: boolean;
   }) => Sale;
 
   // Xbox Open Account Operations
@@ -152,7 +156,10 @@ interface AppContextType {
     notes?: string;
   }) => void;
 
+  isAdmin: boolean;
   saveProduct: (product: Product) => void;
+  updateProductPrice: (productId: string, newPrice: number) => void;
+  updateProductStock: (productId: string, newStock: number) => void;
   deleteOrDeactivateProduct: (productId: string) => void;
   saveConsoleRates: (consoleId: string, rates: XboxConsole['rates']) => void;
   updateConsoleRates: (consoleId: string, rates: XboxConsole['rates']) => void;
@@ -187,7 +194,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.USERS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          if (!parsed.some(u => u.username === 'operador')) {
+            parsed.push({
+              id: 'u-operador',
+              username: 'operador',
+              name: 'Operador de Turno',
+              role: 'operador',
+              password: 'operador',
+            });
+          }
+          return parsed;
+        }
+      } catch (e) { console.error(e); }
     }
     return INITIAL_USERS;
   });
@@ -204,7 +225,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const [products, setProducts] = useState<Product[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed: Product[] = JSON.parse(saved);
+        // Ensure papeleria items have trackStock enabled and positive minStock if 0
+        if (Array.isArray(parsed)) {
+          return parsed.map(p => {
+            if (p.area === 'papeleria' && !p.trackStock) {
+              return { ...p, trackStock: true, stock: p.stock > 0 ? p.stock : 25, minStock: p.minStock || 5 };
+            }
+            return p;
+          });
+        }
+      } catch (e) { console.error(e); }
     }
     return INITIAL_PRODUCTS;
   });
@@ -442,17 +474,32 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     change?: number;
     notes?: string;
     consoleSessionId?: string;
+    date?: string;
+    time?: string;
+    timestamp?: number;
+    isExtemporaneous?: boolean;
   }): Sale => {
     const now = new Date();
+    const saleDate = saleData.date || getTodayDateString();
+    const saleTime = saleData.time || getCurrentTimeString();
+    const isPastDate = saleDate !== getTodayDateString();
+    const saleTimestamp =
+      saleData.timestamp ||
+      (saleData.date
+        ? new Date(`${saleDate}T${saleTime.length === 5 ? saleTime + ':00' : saleTime}`).getTime()
+        : now.getTime());
+
     const newSale: Sale = {
       id: `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-      date: getTodayDateString(),
-      time: getCurrentTimeString(),
-      timestamp: now.getTime(),
+      date: saleDate,
+      time: saleTime,
+      timestamp: isNaN(saleTimestamp) ? now.getTime() : saleTimestamp,
+      isExtemporaneous: saleData.isExtemporaneous ?? isPastDate,
+      recordedBy: currentUser.name || currentUser.username,
       ...saleData,
     };
 
-    // 1. Deduct inventory for tracked items (Garguería and Bebidas only; Papelería is not tracked)
+    // 1. Deduct inventory for tracked items (Garguería, Bebidas, Papelería con control de stock)
     setProducts(prevProducts => {
       const updated = [...prevProducts];
       saleData.items.forEach(item => {
@@ -865,6 +912,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     );
   };
 
+  const updateProductPrice = (productId: string, newPrice: number) => {
+    setProducts(prev =>
+      prev.map(p => (p.id === productId ? { ...p, price: Math.max(0, newPrice) } : p))
+    );
+  };
+
+  const updateProductStock = (productId: string, newStock: number) => {
+    setProducts(prev =>
+      prev.map(p => (p.id === productId ? { ...p, stock: Math.max(0, newStock), trackStock: true } : p))
+    );
+  };
+
   const saveConsoleRates = (consoleId: string, rates: XboxConsole['rates']) => {
     setConsoles(prev =>
       prev.map(c => (c.id === consoleId ? { ...c, rates } : c))
@@ -943,7 +1002,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         addCashWithdrawal,
         closeCashRegister,
         addInventoryEntry,
+        isAdmin: currentUser.role === 'admin',
         saveProduct,
+        updateProductPrice,
+        updateProductStock,
         deleteOrDeactivateProduct,
         saveConsoleRates,
         updateConsoleRates: saveConsoleRates,

@@ -15,8 +15,14 @@ import {
   Layers,
   Gamepad2,
   ShoppingBag,
+  FileText,
+  Copy,
+  Check,
+  CreditCard,
 } from 'lucide-react';
-import { formatCOP, formatFullDateEs, formatShortTime } from '../utils/formatters';
+import { formatCOP, formatFullDateEs, formatShortTime, BANK_ACCOUNT_NOTICE, BANK_ACCOUNT_NUMBER } from '../utils/formatters';
+import { exportToPDF } from '../utils/exportUtils';
+import { CashClosure } from '../types';
 
 interface CashRegisterModalProps {
   isOpen: boolean;
@@ -45,9 +51,14 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
     openCashRegister,
     addCashWithdrawal,
     closeCashRegister,
+    sales,
+    expenses,
+    closedSessions,
+    currentUser,
   } = useApp();
 
   const [activeTab, setActiveTab] = useState<'arqueo' | 'retiro' | 'historial'>('arqueo');
+  const [copiedBank, setCopiedBank] = useState(false);
 
   // Base inicial config
   const [initialBaseInput, setInitialBaseInput] = useState<string>(
@@ -70,6 +81,57 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
   const isDiffZero = Math.abs(diff) <= 50;
   const isMissing = diff < -50;
   const isSurplus = diff > 50;
+
+  const handleCopyBank = () => {
+    navigator.clipboard?.writeText(BANK_ACCOUNT_NUMBER);
+    setCopiedBank(true);
+    setTimeout(() => setCopiedBank(false), 2000);
+  };
+
+  const handleDownloadTodayPDF = () => {
+    const todaySalesList = sales.filter(s => s.date === todayDate);
+    const todayExpensesList = expenses.filter(e => e.date === todayDate);
+    const todaySessionsList = closedSessions.filter(cs => {
+      const d = new Date(cs.closedAt).toISOString().split('T')[0];
+      return d === todayDate;
+    });
+
+    exportToPDF({
+      periodLabel: `Cierre Diario - ${todayDate}`,
+      startDate: todayDate,
+      endDate: todayDate,
+      sales: todaySalesList,
+      expenses: todayExpensesList,
+      closedSessions: todaySessionsList,
+      initialCash: currentCash.initialCash,
+      countedCash: parsedCountedCash > 0 ? parsedCountedCash : undefined,
+      cashWithdrawals: currentCash.withdrawals,
+      closureNotes: closureNotes.trim() || undefined,
+      operatorName: currentUser.name || currentUser.username,
+    });
+  };
+
+  const handleDownloadPastClosurePDF = (c: CashClosure) => {
+    const closureSales = sales.filter(s => s.date === c.date);
+    const closureExpenses = expenses.filter(e => e.date === c.date);
+    const closureSessions = closedSessions.filter(cs => {
+      const d = new Date(cs.closedAt).toISOString().split('T')[0];
+      return d === c.date;
+    });
+
+    exportToPDF({
+      periodLabel: `Cierre Diario - ${c.date}`,
+      startDate: c.date,
+      endDate: c.date,
+      sales: closureSales,
+      expenses: closureExpenses,
+      closedSessions: closureSessions,
+      initialCash: c.initialCash,
+      countedCash: c.countedCash,
+      closureNotes: c.notes,
+      operatorName: currentUser.name || currentUser.username,
+    });
+  };
 
   const handleUpdateBase = () => {
     const val = parseFloat(initialBaseInput.replace(/\D/g, '')) || 0;
@@ -163,6 +225,31 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
           >
             <History className="w-3.5 h-3.5 inline mr-1" />
             Historial de Cierres ({cashClosures.length})
+          </button>
+        </div>
+
+        {/* Bank Account Notice Banner */}
+        <div className="mx-4 mt-3 sm:mx-5 bg-amber-50 border border-amber-300 rounded-xl p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg">
+              <CreditCard className="w-4 h-4" />
+            </span>
+            <div>
+              <p className="text-[10px] font-black text-amber-900 uppercase tracking-wider">
+                Cuenta Bancaria para Consignar
+              </p>
+              <p className="text-xs sm:text-sm font-black text-amber-800">
+                {BANK_ACCOUNT_NOTICE}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleCopyBank}
+            className="self-start sm:self-center px-3 py-1.5 bg-amber-200 hover:bg-amber-300 text-amber-900 font-bold text-xs rounded-lg flex items-center gap-1.5 cursor-pointer transition-colors"
+          >
+            {copiedBank ? <Check className="w-3.5 h-3.5 text-emerald-700" /> : <Copy className="w-3.5 h-3.5" />}
+            <span>{copiedBank ? '¡Copiado!' : 'Copiar Cuenta'}</span>
           </button>
         </div>
 
@@ -375,14 +462,26 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                   </div>
                 )}
 
-                <button
-                  id="btn-confirmar-cierre-caja"
-                  onClick={handleConfirmClosure}
-                  className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-xl text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
-                >
-                  <Lock className="w-4 h-4 text-emerald-400" />
-                  <span>GUARDAR CIERRE DIARIO (NO SE PIERDE)</span>
-                </button>
+                <div className="flex flex-col sm:flex-row gap-2 pt-1">
+                  <button
+                    type="button"
+                    id="btn-descargar-pdf-cierre-hoy"
+                    onClick={handleDownloadTodayPDF}
+                    className="py-3 px-4 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs sm:text-sm shadow-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
+                  >
+                    <FileText className="w-4 h-4" />
+                    <span>DESCARGAR PDF CIERRE</span>
+                  </button>
+
+                  <button
+                    id="btn-confirmar-cierre-caja"
+                    onClick={handleConfirmClosure}
+                    className="flex-1 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-xl text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
+                  >
+                    <Lock className="w-4 h-4 text-emerald-400" />
+                    <span>GUARDAR CIERRE DIARIO</span>
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -472,17 +571,28 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                         <strong className="text-slate-900 font-bold capitalize">
                           {formatFullDateEs(c.date)}
                         </strong>
-                        <span
-                          className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
-                            c.status === 'cuadrada'
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : c.status === 'faltante'
-                              ? 'bg-rose-100 text-rose-800'
-                              : 'bg-amber-100 text-amber-900'
-                          }`}
-                        >
-                          {c.status.toUpperCase()}
-                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadPastClosurePDF(c)}
+                            className="px-2 py-0.5 bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 rounded-md font-bold text-[10px] flex items-center gap-1 cursor-pointer transition-colors"
+                            title="Descargar PDF de este cierre"
+                          >
+                            <FileText className="w-3 h-3" />
+                            <span>PDF</span>
+                          </button>
+                          <span
+                            className={`px-2 py-0.5 rounded-full font-black text-[10px] ${
+                              c.status === 'cuadrada'
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : c.status === 'faltante'
+                                ? 'bg-rose-100 text-rose-800'
+                                : 'bg-amber-100 text-amber-900'
+                            }`}
+                          >
+                            {c.status.toUpperCase()}
+                          </span>
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 text-[11px] text-slate-600">

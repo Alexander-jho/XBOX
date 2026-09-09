@@ -147,8 +147,8 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <Package className="w-3.5 h-3.5" />
               <span>Inventario</span>
-              {currentUser.role !== 'admin' && <Lock className="w-3 h-3 text-slate-500" />}
-              {currentUser.role === 'admin' && lowStockProducts.length > 0 && (
+              {currentUser.role === 'cajero' && <Lock className="w-3 h-3 text-slate-500" />}
+              {(currentUser.role === 'admin' || currentUser.role === 'operador') && lowStockProducts.length > 0 && (
                 <span className="w-2 h-2 bg-amber-400 rounded-full" />
               )}
             </button>
@@ -198,14 +198,16 @@ export const Navbar: React.FC<NavbarProps> = ({
               className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border flex items-center gap-1.5 cursor-pointer transition-colors ${
                 currentUser.role === 'admin'
                   ? 'bg-indigo-950/80 border-indigo-700 text-indigo-200 hover:bg-indigo-900'
+                  : currentUser.role === 'operador'
+                  ? 'bg-amber-950/80 border-amber-700 text-amber-200 hover:bg-amber-900'
                   : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
               }`}
               title="Haga clic para cambiar de usuario"
             >
               <User className="w-3.5 h-3.5 text-emerald-400" />
               <span className="capitalize">{currentUser.username}</span>
-              <span className="text-[10px] px-1 py-0.2 rounded-sm bg-slate-700 text-slate-300 font-mono">
-                {currentUser.role === 'admin' ? 'Admin' : 'Cajero'}
+              <span className="text-[10px] px-1 py-0.2 rounded-sm bg-slate-700 text-slate-300 font-mono capitalize">
+                {currentUser.role === 'admin' ? 'Admin' : currentUser.role === 'operador' ? 'Operador' : 'Cajero'}
               </span>
             </button>
 
@@ -290,7 +292,7 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Package className="w-4 h-4" />
               <span>Inventario</span>
             </div>
-            {currentUser.role !== 'admin' && <Lock className="w-3.5 h-3.5 text-slate-500" />}
+            {currentUser.role === 'cajero' && <Lock className="w-3.5 h-3.5 text-slate-500" />}
           </button>
 
           <button

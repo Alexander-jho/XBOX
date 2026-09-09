@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
 import {
   TrendingUp,
@@ -17,8 +17,18 @@ import {
   Play,
   FileSpreadsheet,
   Lock,
+  Copy,
+  Check,
+  CalendarClock,
+  ShieldAlert,
 } from 'lucide-react';
-import { formatCOP, formatFullDateEs, formatShortTime } from '../utils/formatters';
+import {
+  formatCOP,
+  formatFullDateEs,
+  formatShortTime,
+  BANK_ACCOUNT_NOTICE,
+  BANK_ACCOUNT_NUMBER,
+} from '../utils/formatters';
 
 interface DashboardProps {
   onOpenNewSale: (initialArea?: 'gargueria' | 'xbox' | 'papeleria') => void;
@@ -51,16 +61,64 @@ export const Dashboard: React.FC<DashboardProps> = ({
     consoles,
   } = useApp();
 
+  const [copiedBank, setCopiedBank] = useState(false);
+
+  const handleCopyBank = () => {
+    navigator.clipboard.writeText(BANK_ACCOUNT_NUMBER);
+    setCopiedBank(true);
+    setTimeout(() => setCopiedBank(false), 2000);
+  };
+
+  const roleBadgeStyle =
+    currentUser.role === 'admin'
+      ? 'bg-indigo-100 text-indigo-800 border-indigo-200'
+      : currentUser.role === 'operador'
+      ? 'bg-amber-100 text-amber-900 border-amber-200'
+      : 'bg-slate-100 text-slate-700 border-slate-200';
+
+  const roleName =
+    currentUser.role === 'admin'
+      ? 'Administrador'
+      : currentUser.role === 'operador'
+      ? 'Operador'
+      : 'Cajero';
+
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+    <div className="max-w-4xl mx-auto space-y-5 pb-12">
+      {/* Fixed Bank Account Banner (Prompt Requirement) */}
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-950 to-slate-900 text-white rounded-2xl p-4 sm:p-5 shadow-sm border border-blue-700/50 flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex items-center gap-3 text-center sm:text-left">
+          <div className="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0">
+            <Coins className="w-5 h-5" />
+          </div>
+          <div>
+            <span className="text-[11px] uppercase font-bold text-blue-300 tracking-wider block">
+              Aviso Fijo de Consignación & Pagos Digitales
+            </span>
+            <p className="text-sm sm:text-base font-black text-white tracking-wide">
+              {BANK_ACCOUNT_NOTICE}
+            </p>
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={handleCopyBank}
+          className="px-3.5 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer transition-all shadow-sm shrink-0 active:scale-95"
+          title="Copiar número de cuenta bancaria"
+        >
+          {copiedBank ? <Check className="w-4 h-4 text-emerald-300" /> : <Copy className="w-4 h-4" />}
+          <span>{copiedBank ? '¡Copiado!' : 'Copiar 3188287279'}</span>
+        </button>
+      </div>
+
       {/* Title & Date Banner */}
       <div className="text-center bg-white rounded-2xl p-5 shadow-xs border border-slate-200/80">
         <div className="flex items-center justify-center gap-2 mb-2">
           <span className="inline-block px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-full uppercase tracking-wider">
             Punto de Venta & Caja Diaria
           </span>
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-slate-100 text-slate-700 text-xs font-bold rounded-full">
-            👤 {currentUser.role === 'admin' ? 'Administrador' : 'Cajero'}
+          <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 border text-xs font-bold rounded-full ${roleBadgeStyle}`}>
+            👤 {roleName}
           </span>
         </div>
         <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
@@ -69,6 +127,22 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <p className="text-slate-500 font-medium text-sm sm:text-base capitalize mt-1">
           {formatFullDateEs()}
         </p>
+
+        {/* Admin Shortcut for Extemporaneous Transactions */}
+        {currentUser.role === 'admin' && (
+          <div className="mt-3 pt-3 border-t border-slate-100 flex flex-wrap items-center justify-center gap-2">
+            <span className="text-xs text-slate-500">
+              Privilegio de Administrador:
+            </span>
+            <button
+              onClick={() => onOpenNewSale()}
+              className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <CalendarClock className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Registrar venta de días anteriores (Extemporánea)</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Primary Financial Metric Cards */}
@@ -411,8 +485,8 @@ export const Dashboard: React.FC<DashboardProps> = ({
         </div>
       </div>
 
-      {/* Alertas de Inventario (SOLO VISIBLE PARA EL ADMINISTRADOR) */}
-      {currentUser.role === 'admin' ? (
+      {/* Alertas de Inventario (Visible para Administrador y Operador) */}
+      {(currentUser.role === 'admin' || currentUser.role === 'operador') ? (
         lowStockProducts.length > 0 && (
           <div className="bg-amber-50/70 border border-amber-300 rounded-2xl p-4 space-y-2">
             <div className="flex items-center justify-between">

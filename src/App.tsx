@@ -38,9 +38,12 @@ const MainLayout: React.FC = () => {
     setCurrentTab('xbox');
   };
 
-  // Guard for Admin Only Tabs (Inventario y Configuración)
-  const isAdminTab = currentTab === 'inventory' || currentTab === 'settings';
-  const isBlocked = isAdminTab && currentUser.role !== 'admin';
+  // Guard for Tabs according to roles:
+  // - settings: exclusively admin
+  // - inventory: admin and operador (blocked for cajero)
+  const isBlocked =
+    (currentTab === 'settings' && currentUser.role !== 'admin') ||
+    (currentTab === 'inventory' && currentUser.role === 'cajero');
 
   return (
     <div className="min-h-screen bg-slate-100/70 text-slate-800 flex flex-col font-sans selection:bg-emerald-500 selection:text-white">
@@ -63,10 +66,14 @@ const MainLayout: React.FC = () => {
             </div>
             <div>
               <h3 className="text-lg font-black text-slate-900">
-                Acceso Restringido a Administrador
+                {currentTab === 'settings'
+                  ? 'Acceso Exclusivo de Administrador'
+                  : 'Acceso Restringido para Cajero'}
               </h3>
               <p className="text-xs text-slate-500 mt-1">
-                El módulo de {currentTab === 'inventory' ? 'Inventario' : 'Configuración'} requiere permisos de Administrador para modificar costos, stock o tarifas.
+                {currentTab === 'settings'
+                  ? 'El módulo de Configuración (tarifas, consolas y negocio) solo puede ser administrado por el Administrador.'
+                  : 'El módulo de Inventario está disponible para Operador y Administrador para modificar stock y precios.'}
               </p>
             </div>
             <button

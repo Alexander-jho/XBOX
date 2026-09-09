@@ -25,8 +25,12 @@ import {
   Receipt,
   Sun,
   Moon,
+  Copy,
+  Check,
+  CalendarClock,
+  ShieldCheck,
 } from 'lucide-react';
-import { formatCOP } from '../utils/formatters';
+import { formatCOP, BANK_ACCOUNT_NOTICE, BANK_ACCOUNT_NUMBER, getTodayDateString } from '../utils/formatters';
 
 interface SalesModalProps {
   isOpen: boolean;
@@ -44,7 +48,19 @@ export const SalesModal: React.FC<SalesModalProps> = ({
     consoles,
     extraControllerRates,
     registerSale,
+    isAdmin,
+    currentUser,
   } = useApp();
+
+  // Extemporaneous state (Only for Admin)
+  const [isExtemporaneous, setIsExtemporaneous] = useState(false);
+  const [customSaleDate, setCustomSaleDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [customSaleTime, setCustomSaleTime] = useState('18:00');
+  const [copiedBankInModal, setCopiedBankInModal] = useState(false);
 
   // Selected Area
   const [selectedArea, setSelectedArea] = useState<BusinessArea>(initialArea);
@@ -209,9 +225,16 @@ export const SalesModal: React.FC<SalesModalProps> = ({
       cashGiven: paymentMethod === 'efectivo' && parsedCashGiven > 0 ? parsedCashGiven : undefined,
       change: paymentMethod === 'efectivo' && parsedCashGiven > 0 ? cashChange : undefined,
       notes: saleNotes.trim() || undefined,
+      date: isExtemporaneous && isAdmin ? customSaleDate : undefined,
+      time: isExtemporaneous && isAdmin ? customSaleTime : undefined,
+      isExtemporaneous: isExtemporaneous && isAdmin,
     });
 
-    setSuccessMessage(`¡Venta de ${formatCOP(cartTotal)} registrada con éxito en ${paymentMethod.toUpperCase()}!`);
+    setSuccessMessage(
+      `¡Venta de ${formatCOP(cartTotal)} registrada con éxito ${
+        isExtemporaneous && isAdmin ? `para la fecha ${customSaleDate}` : ''
+      } en ${paymentMethod.toUpperCase()}!`
+    );
     setTimeout(() => {
       setSuccessMessage(null);
       // Reset form
@@ -219,6 +242,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
       setCashGiven('');
       setTransferReference('');
       setSaleNotes('');
+      setIsExtemporaneous(false);
       onClose();
     }, 900);
   };
@@ -248,6 +272,61 @@ export const SalesModal: React.FC<SalesModalProps> = ({
             <X className="w-5 h-5" />
           </button>
         </div>
+
+        {/* ADMIN ONLY: REGISTRO EXTEMPORÁNEO (Ventas de días anteriores) */}
+        {isAdmin && (
+          <div className="p-3 sm:px-5 bg-indigo-50/70 border-b border-indigo-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center shrink-0">
+                <CalendarClock className="w-4 h-4" />
+              </div>
+              <div>
+                <span className="font-black text-indigo-950 block">
+                  Panel de Administrador: Registro Extemporáneo
+                </span>
+                <span className="text-[11px] text-indigo-700">
+                  Permite ingresar ventas olvidadas de fechas pasadas (Xbox, Garguería, Papelería).
+                </span>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3">
+              <label className="flex items-center gap-2 font-bold text-indigo-900 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={isExtemporaneous}
+                  onChange={e => setIsExtemporaneous(e.target.checked)}
+                  className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 accent-indigo-600"
+                />
+                <span>Habilitar fecha anterior</span>
+              </label>
+
+              {isExtemporaneous && (
+                <div className="flex items-center gap-2 bg-white px-2.5 py-1 rounded-lg border border-indigo-200 shadow-2xs">
+                  <div>
+                    <label className="text-[9px] font-bold text-indigo-600 block uppercase">Fecha</label>
+                    <input
+                      type="date"
+                      max={getTodayDateString()}
+                      value={customSaleDate}
+                      onChange={e => setCustomSaleDate(e.target.value)}
+                      className="text-xs font-bold text-slate-800 bg-transparent outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[9px] font-bold text-indigo-600 block uppercase">Hora</label>
+                    <input
+                      type="time"
+                      value={customSaleTime}
+                      onChange={e => setCustomSaleTime(e.target.value)}
+                      className="text-xs font-bold text-slate-800 bg-transparent outline-none"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* AREA SELECTION TABS (Item 2 & 21 in prompt) */}
         <div className="p-3 sm:px-5 bg-white border-b border-slate-200">
@@ -654,7 +733,31 @@ export const SalesModal: React.FC<SalesModalProps> = ({
 
               {/* Conditional options depending on payment method */}
               {paymentMethod === 'transferencia' ? (
-                <div className="bg-blue-50/80 p-3 rounded-xl border border-blue-200 space-y-2 text-xs">
+                <div className="bg-blue-50/80 p-3 rounded-xl border border-blue-200 space-y-2.5 text-xs">
+                  {/* Bank account notice card */}
+                  <div className="bg-white p-2.5 rounded-lg border border-blue-200 flex items-center justify-between gap-2 shadow-2xs">
+                    <div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-blue-700 block">
+                        Cuenta destino para consignar:
+                      </span>
+                      <span className="text-xs font-black text-slate-900 font-mono">
+                        {BANK_ACCOUNT_NOTICE}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(BANK_ACCOUNT_NUMBER);
+                        setCopiedBankInModal(true);
+                        setTimeout(() => setCopiedBankInModal(false), 2000);
+                      }}
+                      className="px-2 py-1 bg-blue-100 hover:bg-blue-200 text-blue-800 rounded-md text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                    >
+                      {copiedBankInModal ? <Check className="w-3 h-3 text-emerald-600" /> : <Copy className="w-3 h-3" />}
+                      <span>{copiedBankInModal ? 'Copiado' : 'Copiar'}</span>
+                    </button>
+                  </div>
+
                   <div>
                     <label className="font-bold text-blue-900 block mb-1">Medio utilizado:</label>
                     <select

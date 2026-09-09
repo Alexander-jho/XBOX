@@ -6,7 +6,7 @@ export type TransferProvider = 'Nequi' | 'Daviplata' | 'Bancolombia' | 'Otro';
 
 export type LightMode = 'con_luz' | 'sin_luz';
 
-export type UserRole = 'admin' | 'cajero';
+export type UserRole = 'admin' | 'operador' | 'cajero';
 
 export interface User {
   id: string;
@@ -141,6 +141,8 @@ export interface Sale {
   change?: number;
   notes?: string;
   consoleSessionId?: string;
+  isExtemporaneous?: boolean;
+  recordedBy?: string;
 }
 
 export interface Expense {
