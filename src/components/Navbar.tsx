@@ -35,7 +35,15 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenCash,
   onOpenLoginModal,
 }) => {
-  const { activeSessions, lowStockProducts, todayExpectedCash, currentUser, pendingCreditsCount } = useApp();
+  const {
+    activeSessions,
+    lowStockProducts,
+    todayExpectedCash,
+    currentUser,
+    pendingCreditsCount,
+    cloudSyncStatus,
+    cloudVersion,
+  } = useApp();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleTabClick = (tab: NavTab) => {
@@ -209,6 +217,21 @@ export const Navbar: React.FC<NavbarProps> = ({
               <Coins className="w-3.5 h-3.5 text-emerald-400" />
               <span className="hidden md:inline font-mono">{formatCOP(todayExpectedCash)}</span>
             </button>
+
+            {/* Cloud Real-Time Online Status */}
+            <div
+              className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800/90 border border-slate-700 text-xs select-none"
+              title={`Sincronización centralizada en la nube activa (v${cloudVersion})`}
+            >
+              <span
+                className={`w-2 h-2 rounded-full ${
+                  cloudSyncStatus === 'connected' ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400 animate-ping'
+                }`}
+              />
+              <span className="text-[11px] font-bold text-slate-300 font-mono">
+                {cloudSyncStatus === 'connected' ? 'ONLINE' : 'CONECTANDO'}
+              </span>
+            </div>
 
             {/* User Switch Badge */}
             <button

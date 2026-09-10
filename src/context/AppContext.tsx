@@ -217,6 +217,9 @@ interface AppContextType {
   updateExtraControllerRates: (rates: ExtraControllerRate[]) => void;
   resetToDefaults: () => void;
   resetToInitialDefaults: () => void;
+  isOnlineSyncActive: boolean;
+  cloudSyncStatus: 'connected' | 'connecting' | 'error';
+  cloudVersion: number;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -239,6 +242,38 @@ const STORAGE_KEYS = {
   LAST_SYNC: 'pos_control_last_sync_v2',
 };
 
+const keyToTableMap: Record<string, string> = {
+  [STORAGE_KEYS.USERS]: 'users',
+  [STORAGE_KEYS.PRODUCTS]: 'products',
+  [STORAGE_KEYS.CONSOLES]: 'consoles',
+  [STORAGE_KEYS.EXTRA_CONTROLLERS]: 'extraControllerRates',
+  [STORAGE_KEYS.SESSIONS]: 'sessions',
+  [STORAGE_KEYS.CLOSED_SESSIONS]: 'closedSessions',
+  [STORAGE_KEYS.SALES]: 'sales',
+  [STORAGE_KEYS.EXPENSES]: 'expenses',
+  [STORAGE_KEYS.CASH]: 'cash',
+  [STORAGE_KEYS.CLOSURES]: 'cashClosures',
+  [STORAGE_KEYS.INVENTORY_ENTRIES]: 'inventoryEntries',
+  [STORAGE_KEYS.ACCOUNT_SEQ]: 'accountSeq',
+  [STORAGE_KEYS.CREDITS]: 'credits',
+};
+
+const tableToKeyMap: Record<string, string> = {
+  users: STORAGE_KEYS.USERS,
+  products: STORAGE_KEYS.PRODUCTS,
+  consoles: STORAGE_KEYS.CONSOLES,
+  extraControllerRates: STORAGE_KEYS.EXTRA_CONTROLLERS,
+  sessions: STORAGE_KEYS.SESSIONS,
+  closedSessions: STORAGE_KEYS.CLOSED_SESSIONS,
+  sales: STORAGE_KEYS.SALES,
+  expenses: STORAGE_KEYS.EXPENSES,
+  cash: STORAGE_KEYS.CASH,
+  cashClosures: STORAGE_KEYS.CLOSURES,
+  inventoryEntries: STORAGE_KEYS.INVENTORY_ENTRIES,
+  accountSeq: STORAGE_KEYS.ACCOUNT_SEQ,
+  credits: STORAGE_KEYS.CREDITS,
+};
+
 // Zero mock data: initial credits strictly empty and $0
 export const INITIAL_CREDITS: CreditAccount[] = [];
 
@@ -252,6 +287,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   );
   const isReceivingRemoteSync = useRef(false);
   const lastProcessedSyncTimeRef = useRef<number>(Date.now());
+
+  // Cloud Synchronization State
+  const [isOnlineSyncActive, setIsOnlineSyncActive] = useState<boolean>(true);
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<'connected' | 'connecting' | 'error'>('connecting');
+  const [cloudVersion, setCloudVersion] = useState<number>(1);
 
   // 1. Users & Current User (Per-tab session support so Admin, Operador, and Cajero can run on different screens simultaneously)
   const [users, setUsers] = useState<User[]>(() => {
@@ -441,7 +481,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return [];
   });
 
-  // Broadcast function to notify all screens/tabs/windows instantly
+  // Broadcast function to notify all screens/tabs/windows and central cloud server instantly
   const broadcastChange = useCallback((key: string, data: any) => {
     try {
       const now = Date.now();
@@ -470,12 +510,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           })
         );
       }
+
+      // 3. Central Cloud Server Multi-Device Synchronization
+      const table = keyToTableMap[key];
+      if (table && typeof fetch !== 'undefined') {
+        fetch('/api/db/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            table,
+            data,
+            updatedBy: currentUser?.username || 'sistema',
+            senderId: tabInstanceId,
+          }),
+        })
+          .then(r => r.json())
+          .then(res => {
+            if (res && res.version) {
+              setCloudVersion(res.version);
+              setCloudSyncStatus('connected');
+              setIsOnlineSyncActive(true);
+            }
+          })
+          .catch(err => {
+            console.warn('Central server sync offline/delayed:', err);
+          });
+      }
     } catch (err) {
       console.error('broadcastChange error for key', key, err);
     }
-  }, [tabInstanceId]);
+  }, [tabInstanceId, currentUser?.username]);
 
-  // Apply updates coming from another screen/tab
+  // Apply updates coming from another screen/tab or cloud server
   const applySyncUpdate = useCallback((key: string, data: any) => {
     if (!key || data === undefined) return;
     isReceivingRemoteSync.current = true;
@@ -534,9 +600,125 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   }, []);
 
-  // Multi-tier listener: BroadcastChannel + StorageEvent + CustomEvent + 1-second Poller
+  // Multi-tier listener: Cloud SSE + BroadcastChannel + StorageEvent + CustomEvent + Integrity Poller
   useEffect(() => {
-    // 1. BroadcastChannel Listener
+    let isSubscribed = true;
+
+    // A. Initial Hydration from Central Cloud Database
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/db')
+        .then(res => res.json())
+        .then(json => {
+          if (!isSubscribed || !json.success || !json.db) return;
+          const db = json.db;
+          setCloudVersion(db.version || 1);
+          setCloudSyncStatus('connected');
+          setIsOnlineSyncActive(true);
+
+          isReceivingRemoteSync.current = true;
+          if (Array.isArray(db.products) && db.products.length > 0) setProducts(db.products);
+          if (Array.isArray(db.consoles) && db.consoles.length > 0) setConsoles(db.consoles);
+          if (Array.isArray(db.extraControllerRates) && db.extraControllerRates.length > 0) setExtraControllerRates(db.extraControllerRates);
+          if (Array.isArray(db.users) && db.users.length > 0) setUsers(db.users);
+          if (Array.isArray(db.sales)) setSales(db.sales);
+          if (Array.isArray(db.expenses)) setExpenses(db.expenses);
+          if (Array.isArray(db.sessions)) setActiveSessions(db.sessions);
+          if (Array.isArray(db.closedSessions)) setClosedSessions(db.closedSessions);
+          if (Array.isArray(db.inventoryEntries)) setInventoryEntries(db.inventoryEntries);
+          if (Array.isArray(db.cashClosures)) setCashClosures(db.cashClosures);
+          if (db.cash) setCurrentCash(db.cash);
+          if (db.accountSeq) setAccountSeq(db.accountSeq);
+          if (Array.isArray(db.credits)) {
+            const clean = db.credits.filter((c: any) => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez');
+            setCredits(clean);
+          } else {
+            setCredits([]);
+          }
+
+          setTimeout(() => {
+            isReceivingRemoteSync.current = false;
+          }, 150);
+        })
+        .catch(err => {
+          console.warn('Could not hydrate from /api/db on start:', err);
+        });
+    }
+
+    // B. Real-Time Server-Sent Events (SSE) Stream
+    let eventSource: EventSource | null = null;
+    if (typeof window !== 'undefined' && 'EventSource' in window) {
+      try {
+        eventSource = new EventSource('/api/events');
+
+        eventSource.onopen = () => {
+          if (!isSubscribed) return;
+          setCloudSyncStatus('connected');
+          setIsOnlineSyncActive(true);
+        };
+
+        eventSource.onmessage = (event) => {
+          if (!isSubscribed || !event.data) return;
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'PING') return;
+
+            if (payload.version) {
+              setCloudVersion(payload.version);
+            }
+
+            if (payload.type === 'CONNECTED') {
+              setCloudSyncStatus('connected');
+              setIsOnlineSyncActive(true);
+              return;
+            }
+
+            if (payload.type === 'TABLE_UPDATE') {
+              const { table, data } = payload;
+              const storageKey = tableToKeyMap[table];
+              if (storageKey) {
+                applySyncUpdate(storageKey, data);
+              }
+            } else if (payload.type === 'INVENTORY_SAVED') {
+              if (payload.products) {
+                applySyncUpdate(STORAGE_KEYS.PRODUCTS, payload.products);
+              }
+              if (payload.inventoryEntries) {
+                applySyncUpdate(STORAGE_KEYS.INVENTORY_ENTRIES, payload.inventoryEntries);
+              }
+            } else if (payload.type === 'RESET' && payload.db) {
+              isReceivingRemoteSync.current = true;
+              const db = payload.db;
+              setProducts(db.products);
+              setConsoles(db.consoles);
+              setExtraControllerRates(db.extraControllerRates);
+              setUsers(db.users);
+              setActiveSessions([]);
+              setClosedSessions([]);
+              setSales([]);
+              setExpenses([]);
+              setInventoryEntries([]);
+              setCredits([]);
+              setCurrentCash(db.cash);
+              setAccountSeq(1);
+              setTimeout(() => {
+                isReceivingRemoteSync.current = false;
+              }, 100);
+            }
+          } catch (e) {
+            console.error('Error processing cloud SSE event:', e);
+          }
+        };
+
+        eventSource.onerror = () => {
+          if (!isSubscribed) return;
+          setCloudSyncStatus('connecting');
+        };
+      } catch (e) {
+        console.warn('SSE initialization warning:', e);
+      }
+    }
+
+    // C. BroadcastChannel Listener (Instant same-browser cross-tab sync)
     let channel: BroadcastChannel | null = null;
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       channel = new BroadcastChannel('pos_shared_realtime_db');
@@ -550,7 +732,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       };
     }
 
-    // 2. Native StorageEvent Listener (fallback)
+    // D. Native StorageEvent Listener (fallback)
     const handleStorage = (e: StorageEvent) => {
       if (!e.key || !e.newValue) return;
       try {
@@ -563,7 +745,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     window.addEventListener('storage', handleStorage);
 
-    // 3. Same-window CustomEvent Listener
+    // E. Same-window CustomEvent Listener
     const handleCustomSync = (e: Event) => {
       const detail = (e as CustomEvent).detail;
       if (!detail || detail.senderId === tabInstanceId) return;
@@ -571,14 +753,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     };
     window.addEventListener('pos_universal_sync', handleCustomSync);
 
-    // 4. 1-second background integrity poller (guarantees cross-screen sync in sandboxed iframes)
+    // F. Background integrity poller
     const pollerInterval = setInterval(() => {
       try {
         const lastSyncStr = localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
         const lastSyncNum = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
         if (lastSyncNum > lastProcessedSyncTimeRef.current) {
           lastProcessedSyncTimeRef.current = lastSyncNum;
-          // Reload all dynamic tables from the shared database
           const sSales = localStorage.getItem(STORAGE_KEYS.SALES);
           if (sSales) setSales(JSON.parse(sSales));
 
@@ -612,9 +793,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       } catch (err) {
         console.error('Poller error:', err);
       }
-    }, 1000);
+    }, 1200);
 
     return () => {
+      isSubscribed = false;
+      if (eventSource) eventSource.close();
       if (channel) channel.close();
       window.removeEventListener('storage', handleStorage);
       window.removeEventListener('pos_universal_sync', handleCustomSync);
@@ -1558,6 +1741,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const persistInventoryChanges = () => {
     broadcastChange(STORAGE_KEYS.PRODUCTS, products);
     broadcastChange(STORAGE_KEYS.INVENTORY_ENTRIES, inventoryEntries);
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/db/save-inventory', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          products,
+          inventoryEntries,
+          updatedBy: currentUser?.username || 'sistema',
+        }),
+      })
+        .then(r => r.json())
+        .then(res => {
+          if (res?.version) {
+            setCloudVersion(res.version);
+            setCloudSyncStatus('connected');
+            setIsOnlineSyncActive(true);
+          }
+        })
+        .catch(err => {
+          console.warn('Direct cloud inventory save warning:', err);
+        });
+    }
     return { success: true, count: products.length };
   };
 
@@ -1615,6 +1820,14 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     broadcastChange(STORAGE_KEYS.CREDITS, []);
     broadcastChange(STORAGE_KEYS.CASH, cleanCash);
     broadcastChange(STORAGE_KEYS.ACCOUNT_SEQ, 1);
+
+    if (typeof fetch !== 'undefined') {
+      fetch('/api/db/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirm: true }),
+      }).catch(err => console.warn('Cloud reset warning:', err));
+    }
   };
 
   return (
@@ -1688,6 +1901,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateExtraControllerRates: saveExtraControllerRates,
         resetToDefaults,
         resetToInitialDefaults: resetToDefaults,
+        isOnlineSyncActive,
+        cloudSyncStatus,
+        cloudVersion,
       }}
     >
       {children}
