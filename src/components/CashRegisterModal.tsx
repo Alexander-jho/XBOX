@@ -642,14 +642,142 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                   <button
                     id="btn-confirmar-cierre-caja"
                     onClick={handleConfirmClosure}
-                    className="flex-1 py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-black rounded-xl text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
+                    disabled={isSubmittingClosure}
+                    className="flex-1 py-3 px-4 bg-slate-900 hover:bg-slate-800 disabled:opacity-50 text-white font-black rounded-xl text-xs sm:text-sm shadow-md flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
                   >
                     <Lock className="w-4 h-4 text-emerald-400" />
-                    <span>GUARDAR CIERRE DIARIO</span>
+                    <span>{isSubmittingClosure ? 'GUARDANDO CIERRE...' : 'GUARDAR CIERRE DIARIO'}</span>
                   </button>
                 </div>
               </div>
             </>
+          )}
+
+          {/* TAB: DESGLOSE ÍTEM POR ÍTEM DE TRANSACCIONES */}
+          {activeTab === 'desglose' && (
+            <div className="space-y-4">
+              {/* Header metrics */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase text-emerald-800 block">Total Artículos Vendidos</span>
+                  <span className="text-xl font-black text-emerald-900">{filteredItems.reduce((acc, it) => acc + it.quantity, 0)} uds</span>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase text-blue-800 block">Transacciones del Día</span>
+                  <span className="text-xl font-black text-blue-900">{todaySales.length} ventas</span>
+                </div>
+                <div className="bg-slate-900 text-white p-3 rounded-xl">
+                  <span className="text-[10px] font-bold uppercase text-slate-400 block">Total Recaudado Hoy</span>
+                  <span className="text-xl font-black text-emerald-400">{formatCOP(todaySalesTotal)}</span>
+                </div>
+              </div>
+
+              {/* Filters */}
+              <div className="flex flex-col sm:flex-row gap-2">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Buscar artículo, categoría o cliente..."
+                    value={itemSearchQuery}
+                    onChange={e => setItemSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-emerald-500 outline-hidden"
+                  />
+                </div>
+                <div className="flex gap-1.5 overflow-x-auto text-xs font-bold">
+                  {(['all', 'papeleria', 'gargueria', 'xbox'] as const).map(area => (
+                    <button
+                      key={area}
+                      type="button"
+                      onClick={() => setItemAreaFilter(area)}
+                      className={`px-3 py-1.5 rounded-xl capitalize whitespace-nowrap cursor-pointer transition-colors ${
+                        itemAreaFilter === area
+                          ? 'bg-emerald-600 text-white font-black'
+                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                      }`}
+                    >
+                      {area === 'all' ? 'Todos' : area === 'gargueria' ? 'Garguería' : area === 'papeleria' ? 'Papelería' : 'Xbox'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Items List */}
+              {filteredItems.length === 0 ? (
+                <div className="text-center py-10 text-slate-400 text-xs bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <ListOrdered className="w-8 h-8 mx-auto text-slate-300 mb-2" />
+                  <p>No se encontraron artículos registrados para los filtros seleccionados.</p>
+                </div>
+              ) : (
+                <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+                  <div className="overflow-x-auto max-h-[380px]">
+                    <table className="w-full text-left text-xs">
+                      <thead className="bg-slate-100 border-b border-slate-200 text-slate-700 font-black text-[10px] uppercase sticky top-0 z-10">
+                        <tr>
+                          <th className="p-2.5">Hora</th>
+                          <th className="p-2.5">Artículo / Concepto</th>
+                          <th className="p-2.5">Área</th>
+                          <th className="p-2.5 text-center">Cant</th>
+                          <th className="p-2.5 text-right">Unitario</th>
+                          <th className="p-2.5 text-right">Subtotal</th>
+                          <th className="p-2.5">Medio de Pago</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredItems.map(item => (
+                          <tr key={item.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="p-2.5 text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                              <span className="inline-flex items-center gap-1">
+                                <Clock className="w-3 h-3 text-slate-400" />
+                                {item.time}
+                              </span>
+                            </td>
+                            <td className="p-2.5">
+                              <strong className="text-slate-900 block font-bold">{item.name}</strong>
+                              {item.customerName && (
+                                <span className="text-[10px] text-amber-700 font-semibold block">Cliente: {item.customerName}</span>
+                              )}
+                            </td>
+                            <td className="p-2.5">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                                item.area === 'papeleria'
+                                  ? 'bg-blue-100 text-blue-800'
+                                  : item.area === 'xbox'
+                                  ? 'bg-emerald-100 text-emerald-800'
+                                  : 'bg-purple-100 text-purple-800'
+                              }`}>
+                                {item.category}
+                              </span>
+                            </td>
+                            <td className="p-2.5 text-center font-bold text-slate-800">
+                              {item.quantity}
+                            </td>
+                            <td className="p-2.5 text-right font-medium text-slate-600">
+                              {formatCOP(item.unitPrice)}
+                            </td>
+                            <td className="p-2.5 text-right font-black text-slate-900">
+                              {formatCOP(item.subtotal)}
+                            </td>
+                            <td className="p-2.5 whitespace-nowrap">
+                              <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                item.paymentMethod === 'efectivo'
+                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                                  : item.paymentMethod === 'credito'
+                                  ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                  : 'bg-blue-50 text-blue-800 border border-blue-200'
+                              }`}>
+                                {item.paymentMethod.toUpperCase()}
+                                {item.transferProvider ? ` (${item.transferProvider})` : ''}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* TAB: RETIROS DE EFECTIVO */}

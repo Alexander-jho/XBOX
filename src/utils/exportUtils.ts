@@ -157,6 +157,8 @@ export function exportToPDF({
   expenses,
   closedSessions,
   initialCash,
+  initialCashGeneral,
+  initialCashTragamonedas,
   countedCash = 0,
   cashWithdrawals = [],
   closureNotes = '',
@@ -171,6 +173,7 @@ export function exportToPDF({
   const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
   const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
   const marginX = 14;
+  const marginY = 14;
   const contentWidth = pageWidth - marginX * 2; // 182mm
 
   // Financial calculations
