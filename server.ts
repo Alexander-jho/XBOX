@@ -130,11 +130,33 @@ function broadcastSSE(eventData: any) {
 async function startServer() {
   const app = express();
 
+  // CORS and anti-buffering middleware
+  app.use((req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   app.use(express.json({ limit: '15mb' }));
   app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
   // Ensure database is initialized
   const db = loadDatabase();
+
+  // API 0: Fast ping with latency measurement
+  app.get('/api/ping', (_req: Request, res: Response) => {
+    const current = loadDatabase();
+    res.json({
+      ok: true,
+      version: current.version,
+      time: Date.now(),
+      connectedClients: sseClients.size,
+    });
+  });
 
   // API 1: Health check
   app.get('/api/health', (_req: Request, res: Response) => {
@@ -165,6 +187,9 @@ async function startServer() {
       Connection: 'keep-alive',
       'X-Accel-Buffering': 'no',
     });
+    if (typeof (res as any).flushHeaders === 'function') {
+      (res as any).flushHeaders();
+    }
 
     res.write(`data: ${JSON.stringify({ type: 'CONNECTED', version: db.version, time: Date.now() })}\n\n`);
 

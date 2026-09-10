@@ -265,3 +265,18 @@ export interface InventoryEntry {
   notes?: string;
 }
 
+export type CloudSyncStatus = 'online' | 'offline' | 'connecting' | 'reconnecting';
+
+export interface SyncDiagnosticInfo {
+  status: CloudSyncStatus;
+  statusLabel: string;
+  isOnline: boolean;
+  version: number;
+  latencyMs: number | null;
+  lastSyncTimestamp: number | null;
+  pendingQueueCount: number;
+  lastSyncTimeFormatted: string;
+  isFallbackActive: boolean;
+  errorMessage?: string;
+}
+

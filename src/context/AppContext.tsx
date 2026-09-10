@@ -19,6 +19,8 @@ import {
   UserRole,
   CreditAccount,
   CreditPayment,
+  CloudSyncStatus,
+  SyncDiagnosticInfo,
 } from '../types';
 import {
   INITIAL_CONSOLES,
@@ -218,8 +220,11 @@ interface AppContextType {
   resetToDefaults: () => void;
   resetToInitialDefaults: () => void;
   isOnlineSyncActive: boolean;
-  cloudSyncStatus: 'connected' | 'connecting' | 'error';
+  cloudSyncStatus: CloudSyncStatus;
   cloudVersion: number;
+  syncDiagnostics: SyncDiagnosticInfo;
+  retryConnection: () => Promise<boolean>;
+  forceFullSync: () => Promise<boolean>;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -240,6 +245,7 @@ const STORAGE_KEYS = {
   ACCOUNT_SEQ: 'pos_control_acc_seq_v2',
   CREDITS: 'pos_control_credits_v2',
   LAST_SYNC: 'pos_control_last_sync_v2',
+  PENDING_QUEUE: 'pos_pending_sync_queue_v2',
 };
 
 const keyToTableMap: Record<string, string> = {
@@ -288,10 +294,21 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const isReceivingRemoteSync = useRef(false);
   const lastProcessedSyncTimeRef = useRef<number>(Date.now());
 
-  // Cloud Synchronization State
+  // Cloud Synchronization State & Fallback Engine
   const [isOnlineSyncActive, setIsOnlineSyncActive] = useState<boolean>(true);
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<'connected' | 'connecting' | 'error'>('connecting');
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('connecting');
   const [cloudVersion, setCloudVersion] = useState<number>(1);
+  const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [lastSyncTimestamp, setLastSyncTimestamp] = useState<number | null>(null);
+  const [pendingQueueCount, setPendingQueueCount] = useState<number>(() => {
+    try {
+      const q = localStorage.getItem(STORAGE_KEYS.PENDING_QUEUE);
+      return q ? JSON.parse(q).length : 0;
+    } catch {
+      return 0;
+    }
+  });
+  const [lastSyncErrorMessage, setLastSyncErrorMessage] = useState<string | undefined>();
 
   // 1. Users & Current User (Per-tab session support so Admin, Operador, and Cajero can run on different screens simultaneously)
   const [users, setUsers] = useState<User[]>(() => {
