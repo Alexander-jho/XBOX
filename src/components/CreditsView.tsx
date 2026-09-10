@@ -112,7 +112,8 @@ export const CreditsView: React.FC = () => {
         const q = searchQuery.toLowerCase();
         const matchesName = c.customerName.toLowerCase().includes(q);
         const matchesPhone = c.customerPhone?.toLowerCase().includes(q);
-        const matchesDesc = c.itemSummary.toLowerCase().includes(q);
+        const desc = c.itemsSummary || (c as any).itemSummary || '';
+        const matchesDesc = desc.toLowerCase().includes(q);
         if (!matchesName && !matchesPhone && !matchesDesc) return false;
       }
       return true;
@@ -188,10 +189,14 @@ export const CreditsView: React.FC = () => {
       customerName: newCreditCustomer.trim(),
       customerPhone: newCreditPhone.trim() || undefined,
       area: newCreditArea,
+      itemsSummary: newCreditDescription.trim() || `Venta a crédito en área ${newCreditArea.toUpperCase()}`,
       itemSummary: newCreditDescription.trim() || `Venta a crédito en área ${newCreditArea.toUpperCase()}`,
+      total: parsedAmount,
       saleTotal: parsedAmount,
       dueDate: newCreditDueDate || undefined,
       notes: newCreditDescription.trim() || undefined,
+      date: isNewCreditExtemporaneous && isAdmin ? newCreditPastDate : undefined,
+      time: isNewCreditExtemporaneous && isAdmin ? newCreditPastTime : undefined,
       customDate: isNewCreditExtemporaneous && isAdmin ? newCreditPastDate : undefined,
       customTime: isNewCreditExtemporaneous && isAdmin ? newCreditPastTime : undefined,
     });

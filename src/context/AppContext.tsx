@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useCallback, useRef, ReactNode } from 'react';
 import {
   Product,
   XboxConsole,
@@ -77,11 +77,17 @@ interface AppContextType {
     customerName: string;
     customerPhone?: string;
     area: BusinessArea;
-    itemsSummary: string;
-    total: number;
+    itemsSummary?: string;
+    itemSummary?: string;
+    total?: number;
+    saleTotal?: number;
     notes?: string;
     dueDate?: string;
     saleId?: string;
+    date?: string;
+    customDate?: string;
+    time?: string;
+    customTime?: string;
   }) => CreditAccount;
   registerCreditPayment: (
     creditId: string,
@@ -132,6 +138,7 @@ interface AppContextType {
     isExtemporaneous?: boolean;
     customerName?: string;
     customerPhone?: string;
+    dueDate?: string;
   }) => Sale;
 
   // Xbox Open Account Operations
@@ -229,44 +236,24 @@ const STORAGE_KEYS = {
   INVENTORY_ENTRIES: 'pos_control_inventory_entries_v2',
   ACCOUNT_SEQ: 'pos_control_acc_seq_v2',
   CREDITS: 'pos_control_credits_v2',
+  LAST_SYNC: 'pos_control_last_sync_v2',
 };
 
-const INITIAL_CREDITS: CreditAccount[] = [
-  {
-    id: 'cred-sample-1',
-    customerName: 'Carlos Rodríguez',
-    customerPhone: '3124567890',
-    saleTotal: 15000,
-    currentBalance: 7000,
-    paidAmount: 8000,
-    area: 'papeleria',
-    itemsSummary: '2x Cuaderno Cuadriculado, 1x Resaltador Pelikan',
-    status: 'pendiente',
-    createdAt: Date.now() - 86400000 * 2,
-    createdDate: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
-    createdTime: '15:30',
-    dueDate: new Date(Date.now() + 86400000 * 3).toISOString().split('T')[0],
-    payments: [
-      {
-        id: 'cp-sample-1',
-        creditId: 'cred-sample-1',
-        amount: 8000,
-        paymentMethod: 'efectivo',
-        date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-        time: '16:00',
-        timestamp: Date.now() - 86400000,
-        receivedBy: 'Operador de Turno',
-        notes: 'Abono inicial en efectivo',
-      },
-    ],
-    notes: 'Vecino del frente, abona los viernes',
-  },
-];
+// Zero mock data: initial credits strictly empty and $0
+export const INITIAL_CREDITS: CreditAccount[] = [];
 
 export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const todayStr = getTodayDateString();
 
-  // 1. Users & Current User
+  // Tab instance ID for cross-screen synchronization
+  const tabInstanceId = useMemo(
+    () => 'tab-' + Math.random().toString(36).substring(2, 9) + '-' + Date.now(),
+    []
+  );
+  const isReceivingRemoteSync = useRef(false);
+  const lastProcessedSyncTimeRef = useRef<number>(Date.now());
+
+  // 1. Users & Current User (Per-tab session support so Admin, Operador, and Cajero can run on different screens simultaneously)
   const [users, setUsers] = useState<User[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.USERS);
     if (saved) {
@@ -290,11 +277,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   });
 
   const [currentUser, setCurrentUser] = useState<User>(() => {
-    const saved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
-    if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+    const sessionSaved = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(STORAGE_KEYS.CURRENT_USER) : null;
+    if (sessionSaved) {
+      try { return JSON.parse(sessionSaved); } catch (e) { console.error(e); }
     }
-    return INITIAL_USERS[0]; // Default to Admin for immediate exploration
+    const localSaved = localStorage.getItem(STORAGE_KEYS.CURRENT_USER);
+    if (localSaved) {
+      try { return JSON.parse(localSaved); } catch (e) { console.error(e); }
+    }
+    return INITIAL_USERS[0];
   });
 
   // 2. Products
@@ -303,7 +294,6 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (saved) {
       try {
         const parsed: Product[] = JSON.parse(saved);
-        // Ensure papeleria items have trackStock enabled and positive minStock if 0
         if (Array.isArray(parsed)) {
           return parsed.map(p => {
             if (p.area === 'papeleria' && !p.trackStock) {
@@ -353,11 +343,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return [];
   });
 
-  // 7. Sales
+  // 7. Sales (Purge any mock/sample test sales)
   const [sales, setSales] = useState<Sale[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.SALES);
     if (saved) {
-      try { return JSON.parse(saved); } catch (e) { console.error(e); }
+      try {
+        const parsed: Sale[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter(
+            s => s && s.creditId !== 'cred-sample-1' && s.customerName !== 'Carlos Rodríguez'
+          );
+        }
+      } catch (e) { console.error(e); }
     }
     return [];
   });
@@ -389,7 +386,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: `cash-${todayStr}`,
       date: todayStr,
       openedAt: Date.now(),
-      initialCash: 155000, // Fondo base fijo diario $155.000 COP ($100.000 General + $55.000 Tragamonedas)
+      initialCash: 155000,
       initialCashGeneral: 100000,
       initialCashTragamonedas: 55000,
       isOpen: true,
@@ -421,56 +418,283 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return saved ? parseInt(saved, 10) : 1;
   });
 
-  // 13. Credits / Fiados
+  // 13. Credits / Fiados (Zero mock data - strictly empty default & clean local state)
   const [credits, setCredits] = useState<CreditAccount[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.CREDITS);
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed: CreditAccount[] = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          // Strictly purge any sample or test credit
+          const clean = parsed.filter(
+            c => c && c.id && !c.id.includes('sample') && c.customerName !== 'Carlos Rodríguez'
+          );
+          if (clean.length !== parsed.length) {
+            localStorage.setItem(STORAGE_KEYS.CREDITS, JSON.stringify(clean));
+          }
+          return clean;
+        }
       } catch (e) {
         console.error(e);
       }
     }
-    return INITIAL_CREDITS;
+    return [];
   });
 
-  // Persistence Effects
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users)); }, [users]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser)); }, [currentUser]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products)); }, [products]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.CONSOLES, JSON.stringify(consoles)); }, [consoles]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.EXTRA_CONTROLLERS, JSON.stringify(extraControllerRates)); }, [extraControllerRates]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SESSIONS, JSON.stringify(activeSessions)); }, [activeSessions]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.CLOSED_SESSIONS, JSON.stringify(closedSessions)); }, [closedSessions]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(sales)); }, [sales]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.EXPENSES, JSON.stringify(expenses)); }, [expenses]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.CASH, JSON.stringify(currentCash)); }, [currentCash]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.CLOSURES, JSON.stringify(cashClosures)); }, [cashClosures]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.INVENTORY_ENTRIES, JSON.stringify(inventoryEntries)); }, [inventoryEntries]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.ACCOUNT_SEQ, accountSeq.toString()); }, [accountSeq]);
-  useEffect(() => { localStorage.setItem(STORAGE_KEYS.CREDITS, JSON.stringify(credits)); }, [credits]);
+  // Broadcast function to notify all screens/tabs/windows instantly
+  const broadcastChange = useCallback((key: string, data: any) => {
+    try {
+      const now = Date.now();
+      localStorage.setItem(key, JSON.stringify(data));
+      localStorage.setItem(STORAGE_KEYS.LAST_SYNC, now.toString());
+      lastProcessedSyncTimeRef.current = now;
 
-  // Cross-tab synchronization for shared local offline DB
+      // 1. BroadcastChannel (fastest cross-tab/window/iframe communication)
+      if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+        const channel = new BroadcastChannel('pos_shared_realtime_db');
+        channel.postMessage({
+          type: 'DB_SYNC',
+          key,
+          data,
+          senderId: tabInstanceId,
+          timestamp: now,
+        });
+        channel.close();
+      }
+
+      // 2. Window CustomEvent (instant dispatch for current window)
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(
+          new CustomEvent('pos_universal_sync', {
+            detail: { key, data, senderId: tabInstanceId, timestamp: now },
+          })
+        );
+      }
+    } catch (err) {
+      console.error('broadcastChange error for key', key, err);
+    }
+  }, [tabInstanceId]);
+
+  // Apply updates coming from another screen/tab
+  const applySyncUpdate = useCallback((key: string, data: any) => {
+    if (!key || data === undefined) return;
+    isReceivingRemoteSync.current = true;
+    try {
+      switch (key) {
+        case STORAGE_KEYS.PRODUCTS:
+          setProducts(data);
+          break;
+        case STORAGE_KEYS.SALES:
+          setSales(data);
+          break;
+        case STORAGE_KEYS.CREDITS: {
+          const clean = Array.isArray(data)
+            ? data.filter((c: any) => c && c.id && !c.id.includes('sample') && c.customerName !== 'Carlos Rodríguez')
+            : [];
+          setCredits(clean);
+          break;
+        }
+        case STORAGE_KEYS.EXPENSES:
+          setExpenses(data);
+          break;
+        case STORAGE_KEYS.CASH:
+          setCurrentCash(data);
+          break;
+        case STORAGE_KEYS.CLOSURES:
+          setCashClosures(data);
+          break;
+        case STORAGE_KEYS.INVENTORY_ENTRIES:
+          setInventoryEntries(data);
+          break;
+        case STORAGE_KEYS.SESSIONS:
+          setActiveSessions(data);
+          break;
+        case STORAGE_KEYS.CLOSED_SESSIONS:
+          setClosedSessions(data);
+          break;
+        case STORAGE_KEYS.CONSOLES:
+          setConsoles(data);
+          break;
+        case STORAGE_KEYS.EXTRA_CONTROLLERS:
+          setExtraControllerRates(data);
+          break;
+        case STORAGE_KEYS.USERS:
+          setUsers(data);
+          break;
+        case STORAGE_KEYS.ACCOUNT_SEQ:
+          setAccountSeq(Number(data) || 1);
+          break;
+      }
+    } catch (e) {
+      console.error('applySyncUpdate error for key', key, e);
+    } finally {
+      setTimeout(() => {
+        isReceivingRemoteSync.current = false;
+      }, 80);
+    }
+  }, []);
+
+  // Multi-tier listener: BroadcastChannel + StorageEvent + CustomEvent + 1-second Poller
   useEffect(() => {
+    // 1. BroadcastChannel Listener
+    let channel: BroadcastChannel | null = null;
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+      channel = new BroadcastChannel('pos_shared_realtime_db');
+      channel.onmessage = (event) => {
+        const msg = event.data;
+        if (!msg || msg.senderId === tabInstanceId) return;
+        if (msg.timestamp) {
+          lastProcessedSyncTimeRef.current = Math.max(lastProcessedSyncTimeRef.current, msg.timestamp);
+        }
+        applySyncUpdate(msg.key, msg.data);
+      };
+    }
+
+    // 2. Native StorageEvent Listener (fallback)
     const handleStorage = (e: StorageEvent) => {
       if (!e.key || !e.newValue) return;
       try {
-        if (e.key === STORAGE_KEYS.PRODUCTS) setProducts(JSON.parse(e.newValue));
-        if (e.key === STORAGE_KEYS.SALES) setSales(JSON.parse(e.newValue));
-        if (e.key === STORAGE_KEYS.CREDITS) setCredits(JSON.parse(e.newValue));
-        if (e.key === STORAGE_KEYS.CASH) setCurrentCash(JSON.parse(e.newValue));
-        if (e.key === STORAGE_KEYS.CLOSURES) setCashClosures(JSON.parse(e.newValue));
-        if (e.key === STORAGE_KEYS.EXPENSES) setExpenses(JSON.parse(e.newValue));
-        if (e.key === STORAGE_KEYS.INVENTORY_ENTRIES) setInventoryEntries(JSON.parse(e.newValue));
-        if (e.key === STORAGE_KEYS.SESSIONS) setActiveSessions(JSON.parse(e.newValue));
-        if (e.key === STORAGE_KEYS.CLOSED_SESSIONS) setClosedSessions(JSON.parse(e.newValue));
+        if (Object.values(STORAGE_KEYS).includes(e.key)) {
+          applySyncUpdate(e.key, JSON.parse(e.newValue));
+        }
       } catch (err) {
         console.error('Storage sync error:', err);
       }
     };
     window.addEventListener('storage', handleStorage);
-    return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+
+    // 3. Same-window CustomEvent Listener
+    const handleCustomSync = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail || detail.senderId === tabInstanceId) return;
+      applySyncUpdate(detail.key, detail.data);
+    };
+    window.addEventListener('pos_universal_sync', handleCustomSync);
+
+    // 4. 1-second background integrity poller (guarantees cross-screen sync in sandboxed iframes)
+    const pollerInterval = setInterval(() => {
+      try {
+        const lastSyncStr = localStorage.getItem(STORAGE_KEYS.LAST_SYNC);
+        const lastSyncNum = lastSyncStr ? parseInt(lastSyncStr, 10) : 0;
+        if (lastSyncNum > lastProcessedSyncTimeRef.current) {
+          lastProcessedSyncTimeRef.current = lastSyncNum;
+          // Reload all dynamic tables from the shared database
+          const sSales = localStorage.getItem(STORAGE_KEYS.SALES);
+          if (sSales) setSales(JSON.parse(sSales));
+
+          const sCredits = localStorage.getItem(STORAGE_KEYS.CREDITS);
+          if (sCredits) {
+            const parsed = JSON.parse(sCredits);
+            setCredits(Array.isArray(parsed) ? parsed.filter((c: any) => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez') : []);
+          }
+
+          const sProducts = localStorage.getItem(STORAGE_KEYS.PRODUCTS);
+          if (sProducts) setProducts(JSON.parse(sProducts));
+
+          const sExpenses = localStorage.getItem(STORAGE_KEYS.EXPENSES);
+          if (sExpenses) setExpenses(JSON.parse(sExpenses));
+
+          const sCash = localStorage.getItem(STORAGE_KEYS.CASH);
+          if (sCash) setCurrentCash(JSON.parse(sCash));
+
+          const sClosures = localStorage.getItem(STORAGE_KEYS.CLOSURES);
+          if (sClosures) setCashClosures(JSON.parse(sClosures));
+
+          const sSessions = localStorage.getItem(STORAGE_KEYS.SESSIONS);
+          if (sSessions) setActiveSessions(JSON.parse(sSessions));
+
+          const sClosed = localStorage.getItem(STORAGE_KEYS.CLOSED_SESSIONS);
+          if (sClosed) setClosedSessions(JSON.parse(sClosed));
+
+          const sEntries = localStorage.getItem(STORAGE_KEYS.INVENTORY_ENTRIES);
+          if (sEntries) setInventoryEntries(JSON.parse(sEntries));
+        }
+      } catch (err) {
+        console.error('Poller error:', err);
+      }
+    }, 1000);
+
+    return () => {
+      if (channel) channel.close();
+      window.removeEventListener('storage', handleStorage);
+      window.removeEventListener('pos_universal_sync', handleCustomSync);
+      clearInterval(pollerInterval);
+    };
+  }, [tabInstanceId, applySyncUpdate]);
+
+  // Persistence Effects with cross-screen broadcast
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.USERS, users);
+  }, [users, broadcastChange]);
+
+  useEffect(() => {
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
+    }
+    localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(currentUser));
+  }, [currentUser]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.PRODUCTS, products);
+  }, [products, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.CONSOLES, consoles);
+  }, [consoles, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.EXTRA_CONTROLLERS, extraControllerRates);
+  }, [extraControllerRates, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.SESSIONS, activeSessions);
+  }, [activeSessions, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.CLOSED_SESSIONS, closedSessions);
+  }, [closedSessions, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.SALES, sales);
+  }, [sales, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.EXPENSES, expenses);
+  }, [expenses, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.CASH, currentCash);
+  }, [currentCash, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.CLOSURES, cashClosures);
+  }, [cashClosures, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.INVENTORY_ENTRIES, inventoryEntries);
+  }, [inventoryEntries, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    broadcastChange(STORAGE_KEYS.ACCOUNT_SEQ, accountSeq);
+  }, [accountSeq, broadcastChange]);
+
+  useEffect(() => {
+    if (isReceivingRemoteSync.current) return;
+    const cleanCredits = credits.filter(c => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez');
+    broadcastChange(STORAGE_KEYS.CREDITS, cleanCredits);
+  }, [credits, broadcastChange]);
 
   // Periodic alarm checks for active Xbox sessions
   useEffect(() => {
@@ -608,32 +832,88 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     customerName: string;
     customerPhone?: string;
     area: BusinessArea;
-    itemsSummary: string;
-    total: number;
+    itemsSummary?: string;
+    itemSummary?: string;
+    total?: number;
+    saleTotal?: number;
     notes?: string;
     dueDate?: string;
     saleId?: string;
+    date?: string;
+    customDate?: string;
+    time?: string;
+    customTime?: string;
   }): CreditAccount => {
     const now = new Date();
+    const effectiveTotal = data.total ?? data.saleTotal ?? 0;
+    const effectiveSummary = data.itemsSummary || data.itemSummary || 'Venta a crédito';
+    const effectiveDate = data.date || data.customDate || getTodayDateString();
+    const effectiveTime = data.time || data.customTime || getCurrentTimeString();
+    const isPastDate = effectiveDate !== getTodayDateString();
+
+    const creditId = `cred-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    let linkedSaleId = data.saleId;
+
+    // If no existing sale linked, automatically generate corresponding credit sale
+    if (!linkedSaleId) {
+      linkedSaleId = `sale-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const newSale: Sale = {
+        id: linkedSaleId,
+        area: data.area,
+        items: [
+          {
+            name: effectiveSummary,
+            quantity: 1,
+            unitPrice: effectiveTotal,
+            subtotal: effectiveTotal,
+            category: data.area === 'papeleria' ? 'Papelería' : data.area === 'xbox' ? 'Consolas' : 'Garguería',
+          },
+        ],
+        total: effectiveTotal,
+        paymentMethod: 'credito',
+        notes: data.notes,
+        date: effectiveDate,
+        time: effectiveTime,
+        timestamp: now.getTime(),
+        isExtemporaneous: isPastDate,
+        customerName: data.customerName.trim() || 'Cliente Fiado',
+        customerPhone: data.customerPhone?.trim(),
+        creditId,
+        recordedBy: currentUser.name || currentUser.username,
+      };
+
+      setSales(prev => {
+        const updated = [newSale, ...prev];
+        broadcastChange(STORAGE_KEYS.SALES, updated);
+        return updated;
+      });
+    }
+
     const newCredit: CreditAccount = {
-      id: `cred-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+      id: creditId,
       customerName: data.customerName.trim() || 'Cliente Fiado',
       customerPhone: data.customerPhone?.trim(),
-      saleId: data.saleId,
-      saleTotal: data.total,
-      currentBalance: data.total,
+      saleId: linkedSaleId,
+      saleTotal: effectiveTotal,
+      currentBalance: effectiveTotal,
       paidAmount: 0,
       area: data.area,
-      itemsSummary: data.itemsSummary || 'Venta a crédito',
+      itemsSummary: effectiveSummary,
       status: 'pendiente',
       createdAt: now.getTime(),
-      createdDate: getTodayDateString(),
-      createdTime: getCurrentTimeString(),
+      createdDate: effectiveDate,
+      createdTime: effectiveTime,
       dueDate: data.dueDate,
       payments: [],
       notes: data.notes,
     };
-    setCredits(prev => [newCredit, ...prev]);
+
+    setCredits(prev => {
+      const updated = [newCredit, ...prev.filter(c => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez')];
+      broadcastChange(STORAGE_KEYS.CREDITS, updated);
+      return updated;
+    });
+
     return newCredit;
   };
 
@@ -665,8 +945,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       notes: paymentData.notes,
     };
 
-    setCredits(prev =>
-      prev.map(c => {
+    setCredits(prev => {
+      const updated = prev.map(c => {
         if (c.id !== creditId) return c;
         const newPaid = c.paidAmount + paymentData.amount;
         const newBalance = Math.max(0, c.saleTotal - newPaid);
@@ -677,12 +957,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           status: newBalance <= 0 ? 'pagado' : 'pendiente',
           payments: [newPayment, ...(c.payments || [])],
         };
-      })
-    );
+      });
+      broadcastChange(STORAGE_KEYS.CREDITS, updated);
+      return updated;
+    });
   };
 
   const deleteCredit = (creditId: string) => {
-    setCredits(prev => prev.filter(c => c.id !== creditId));
+    setCredits(prev => {
+      const updated = prev.filter(c => c.id !== creditId);
+      broadcastChange(STORAGE_KEYS.CREDITS, updated);
+      return updated;
+    });
   };
 
   // Password Management
@@ -692,6 +978,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       const updatedCurrent = { ...currentUser, password: newPassword };
       setUsers(updatedUsers);
       setCurrentUser(updatedCurrent);
+      broadcastChange(STORAGE_KEYS.USERS, updatedUsers);
       return { success: true, message: 'Contraseña actualizada exitosamente' };
     }
     return { success: false, message: 'La contraseña actual no coincide' };
@@ -706,6 +993,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (currentUser.id === userId) {
       setCurrentUser({ ...currentUser, password: newPassword });
     }
+    broadcastChange(STORAGE_KEYS.USERS, updatedUsers);
     return { success: true, message: 'Contraseña actualizada exitosamente' };
   };
 
@@ -734,6 +1022,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     isExtemporaneous?: boolean;
     customerName?: string;
     customerPhone?: string;
+    dueDate?: string;
   }): Sale => {
     const now = new Date();
     const saleDate = saleData.date || getTodayDateString();
@@ -777,17 +1066,23 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         createdAt: newSale.timestamp,
         createdDate: saleDate,
         createdTime: saleTime,
+        dueDate: saleData.dueDate,
         payments: [],
         notes: saleData.notes,
       };
 
-      setCredits(prev => [newCredit, ...prev]);
+      setCredits(prev => {
+        const updated = [newCredit, ...prev.filter(c => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez')];
+        broadcastChange(STORAGE_KEYS.CREDITS, updated);
+        return updated;
+      });
       newSale.creditId = newCreditId;
     }
 
     // 1. Deduct inventory for tracked items (Garguería, Bebidas, Papelería con control de stock)
     setProducts(prevProducts => {
       const updated = [...prevProducts];
+      let hasChanges = false;
       saleData.items.forEach(item => {
         if (item.productId) {
           const index = updated.findIndex(p => p.id === item.productId);
@@ -796,14 +1091,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
               ...updated[index],
               stock: Math.max(0, updated[index].stock - item.quantity),
             };
+            hasChanges = true;
           }
         }
       });
+      if (hasChanges) {
+        broadcastChange(STORAGE_KEYS.PRODUCTS, updated);
+      }
       return updated;
     });
 
-    // 2. Add to sales
-    setSales(prev => [newSale, ...prev]);
+    // 2. Add to sales and broadcast
+    setSales(prev => {
+      const updated = [newSale, ...prev];
+      broadcastChange(STORAGE_KEYS.SALES, updated);
+      return updated;
+    });
 
     return newSale;
   };
@@ -1198,7 +1501,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     setInventoryEntries(prev => {
       const updated = [entry, ...prev];
-      localStorage.setItem(STORAGE_KEYS.INVENTORY_ENTRIES, JSON.stringify(updated));
+      broadcastChange(STORAGE_KEYS.INVENTORY_ENTRIES, updated);
       return updated;
     });
 
@@ -1214,7 +1517,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         }
         return p;
       });
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      broadcastChange(STORAGE_KEYS.PRODUCTS, updated);
       return updated;
     });
   };
@@ -1223,7 +1526,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setProducts(prev => {
       const exists = prev.some(p => p.id === product.id);
       const updated = exists ? prev.map(p => (p.id === product.id ? product : p)) : [product, ...prev];
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      broadcastChange(STORAGE_KEYS.PRODUCTS, updated);
       return updated;
     });
   };
@@ -1231,7 +1534,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const deleteOrDeactivateProduct = (productId: string) => {
     setProducts(prev => {
       const updated = prev.map(p => (p.id === productId ? { ...p, isActive: false } : p));
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      broadcastChange(STORAGE_KEYS.PRODUCTS, updated);
       return updated;
     });
   };
@@ -1239,7 +1542,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateProductPrice = (productId: string, newPrice: number) => {
     setProducts(prev => {
       const updated = prev.map(p => (p.id === productId ? { ...p, price: Math.max(0, newPrice) } : p));
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      broadcastChange(STORAGE_KEYS.PRODUCTS, updated);
       return updated;
     });
   };
@@ -1247,28 +1550,42 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const updateProductStock = (productId: string, newStock: number) => {
     setProducts(prev => {
       const updated = prev.map(p => (p.id === productId ? { ...p, stock: Math.max(0, newStock), trackStock: true } : p));
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      broadcastChange(STORAGE_KEYS.PRODUCTS, updated);
       return updated;
     });
   };
 
   const persistInventoryChanges = () => {
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-    localStorage.setItem(STORAGE_KEYS.INVENTORY_ENTRIES, JSON.stringify(inventoryEntries));
+    broadcastChange(STORAGE_KEYS.PRODUCTS, products);
+    broadcastChange(STORAGE_KEYS.INVENTORY_ENTRIES, inventoryEntries);
     return { success: true, count: products.length };
   };
 
   const saveConsoleRates = (consoleId: string, rates: XboxConsole['rates']) => {
-    setConsoles(prev =>
-      prev.map(c => (c.id === consoleId ? { ...c, rates } : c))
-    );
+    setConsoles(prev => {
+      const updated = prev.map(c => (c.id === consoleId ? { ...c, rates } : c));
+      broadcastChange(STORAGE_KEYS.CONSOLES, updated);
+      return updated;
+    });
   };
 
   const saveExtraControllerRates = (rates: ExtraControllerRate[]) => {
     setExtraControllerRates(rates);
+    broadcastChange(STORAGE_KEYS.EXTRA_CONTROLLERS, rates);
   };
 
   const resetToDefaults = () => {
+    const cleanCash: CurrentCashRegister = {
+      id: `cash-${getTodayDateString()}`,
+      date: getTodayDateString(),
+      openedAt: Date.now(),
+      initialCash: 155000,
+      initialCashGeneral: 100000,
+      initialCashTragamonedas: 55000,
+      isOpen: true,
+      withdrawals: [],
+    };
+
     setProducts(INITIAL_PRODUCTS);
     setConsoles(INITIAL_CONSOLES);
     setExtraControllerRates(INITIAL_EXTRA_CONTROLLER_RATES);
@@ -1279,19 +1596,25 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setSales([]);
     setExpenses([]);
     setInventoryEntries([]);
-    setCredits(INITIAL_CREDITS);
+    setCredits([]);
     setAccountSeq(1);
-    setCurrentCash({
-      id: `cash-${getTodayDateString()}`,
-      date: getTodayDateString(),
-      openedAt: Date.now(),
-      initialCash: 155000,
-      initialCashGeneral: 100000,
-      initialCashTragamonedas: 55000,
-      isOpen: true,
-      withdrawals: [],
-    });
+    setCurrentCash(cleanCash);
+
     localStorage.clear();
+
+    // Broadcast clean database to all views immediately
+    broadcastChange(STORAGE_KEYS.PRODUCTS, INITIAL_PRODUCTS);
+    broadcastChange(STORAGE_KEYS.CONSOLES, INITIAL_CONSOLES);
+    broadcastChange(STORAGE_KEYS.EXTRA_CONTROLLERS, INITIAL_EXTRA_CONTROLLER_RATES);
+    broadcastChange(STORAGE_KEYS.USERS, INITIAL_USERS);
+    broadcastChange(STORAGE_KEYS.SESSIONS, []);
+    broadcastChange(STORAGE_KEYS.CLOSED_SESSIONS, []);
+    broadcastChange(STORAGE_KEYS.SALES, []);
+    broadcastChange(STORAGE_KEYS.EXPENSES, []);
+    broadcastChange(STORAGE_KEYS.INVENTORY_ENTRIES, []);
+    broadcastChange(STORAGE_KEYS.CREDITS, []);
+    broadcastChange(STORAGE_KEYS.CASH, cleanCash);
+    broadcastChange(STORAGE_KEYS.ACCOUNT_SEQ, 1);
   };
 
   return (

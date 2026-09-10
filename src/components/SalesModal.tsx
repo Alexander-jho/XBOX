@@ -234,6 +234,7 @@ export const SalesModal: React.FC<SalesModalProps> = ({
       change: paymentMethod === 'efectivo' && parsedCashGiven > 0 ? cashChange : undefined,
       customerName: paymentMethod === 'credito' ? creditCustomerName.trim() : undefined,
       customerPhone: paymentMethod === 'credito' ? creditCustomerPhone.trim() || undefined : undefined,
+      dueDate: paymentMethod === 'credito' && creditDueDate ? creditDueDate : undefined,
       notes: saleNotes.trim() || undefined,
       date: isExtemporaneous && isAdmin ? customSaleDate : undefined,
       time: isExtemporaneous && isAdmin ? customSaleTime : undefined,
