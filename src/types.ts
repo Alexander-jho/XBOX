@@ -216,6 +216,8 @@ export interface CashClosure {
   openedAt: number;
   closedAt: number;
   initialCash: number;
+  initialCashGeneral?: number;
+  initialCashTragamonedas?: number;
   cashSales: number;
   transferSales: number;
   totalSales: number;
@@ -244,6 +246,8 @@ export interface CurrentCashRegister {
   date: string; // YYYY-MM-DD
   openedAt: number;
   initialCash: number;
+  initialCashGeneral?: number;
+  initialCashTragamonedas?: number;
   isOpen: boolean;
   withdrawals: CashWithdrawal[];
 }

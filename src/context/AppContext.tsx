@@ -185,7 +185,8 @@ interface AppContextType {
     notes?: string;
   }) => void;
 
-  openCashRegister: (initialCash: number) => void;
+  openCashRegister: (initialCash?: number, initialCashGeneral?: number, initialCashTragamonedas?: number) => void;
+  updateInitialCash: (total: number, general?: number, tragamonedas?: number) => void;
   addCashWithdrawal: (amount: number, reason: string) => void;
   closeCashRegister: (countedCash: number, notes?: string) => CashClosure;
 
@@ -202,6 +203,7 @@ interface AppContextType {
   updateProductPrice: (productId: string, newPrice: number) => void;
   updateProductStock: (productId: string, newStock: number) => void;
   deleteOrDeactivateProduct: (productId: string) => void;
+  persistInventoryChanges: () => { success: boolean; count: number };
   saveConsoleRates: (consoleId: string, rates: XboxConsole['rates']) => void;
   updateConsoleRates: (consoleId: string, rates: XboxConsole['rates']) => void;
   saveExtraControllerRates: (rates: ExtraControllerRate[]) => void;
@@ -375,6 +377,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        if (!parsed.initialCashGeneral || !parsed.initialCashTragamonedas || parsed.initialCash === 50000) {
+          parsed.initialCash = 155000;
+          parsed.initialCashGeneral = 100000;
+          parsed.initialCashTragamonedas = 55000;
+        }
         return parsed;
       } catch (e) { console.error(e); }
     }
@@ -382,7 +389,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: `cash-${todayStr}`,
       date: todayStr,
       openedAt: Date.now(),
-      initialCash: 50000, // Default base inicial $50.000 COP
+      initialCash: 155000, // Fondo base fijo diario $155.000 COP ($100.000 General + $55.000 Tragamonedas)
+      initialCashGeneral: 100000,
+      initialCashTragamonedas: 55000,
       isOpen: true,
       withdrawals: [],
     };
@@ -440,6 +449,28 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.INVENTORY_ENTRIES, JSON.stringify(inventoryEntries)); }, [inventoryEntries]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.ACCOUNT_SEQ, accountSeq.toString()); }, [accountSeq]);
   useEffect(() => { localStorage.setItem(STORAGE_KEYS.CREDITS, JSON.stringify(credits)); }, [credits]);
+
+  // Cross-tab synchronization for shared local offline DB
+  useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (!e.key || !e.newValue) return;
+      try {
+        if (e.key === STORAGE_KEYS.PRODUCTS) setProducts(JSON.parse(e.newValue));
+        if (e.key === STORAGE_KEYS.SALES) setSales(JSON.parse(e.newValue));
+        if (e.key === STORAGE_KEYS.CREDITS) setCredits(JSON.parse(e.newValue));
+        if (e.key === STORAGE_KEYS.CASH) setCurrentCash(JSON.parse(e.newValue));
+        if (e.key === STORAGE_KEYS.CLOSURES) setCashClosures(JSON.parse(e.newValue));
+        if (e.key === STORAGE_KEYS.EXPENSES) setExpenses(JSON.parse(e.newValue));
+        if (e.key === STORAGE_KEYS.INVENTORY_ENTRIES) setInventoryEntries(JSON.parse(e.newValue));
+        if (e.key === STORAGE_KEYS.SESSIONS) setActiveSessions(JSON.parse(e.newValue));
+        if (e.key === STORAGE_KEYS.CLOSED_SESSIONS) setClosedSessions(JSON.parse(e.newValue));
+      } catch (err) {
+        console.error('Storage sync error:', err);
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   // Periodic alarm checks for active Xbox sessions
   useEffect(() => {
@@ -1047,14 +1078,39 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     setExpenses(prev => [newExpense, ...prev]);
   };
 
-  const openCashRegister = (initialCash: number) => {
-    setCurrentCash({
+  const openCashRegister = (
+    initialCash: number = 155000,
+    initialCashGeneral: number = 100000,
+    initialCashTragamonedas: number = 55000
+  ) => {
+    const updated: CurrentCashRegister = {
       id: `cash-${getTodayDateString()}`,
       date: getTodayDateString(),
       openedAt: Date.now(),
       initialCash,
+      initialCashGeneral,
+      initialCashTragamonedas,
       isOpen: true,
       withdrawals: [],
+    };
+    setCurrentCash(updated);
+    localStorage.setItem(STORAGE_KEYS.CASH, JSON.stringify(updated));
+  };
+
+  const updateInitialCash = (
+    total: number,
+    general: number = 100000,
+    tragamonedas: number = 55000
+  ) => {
+    setCurrentCash(prev => {
+      const updated: CurrentCashRegister = {
+        ...prev,
+        initialCash: total,
+        initialCashGeneral: general,
+        initialCashTragamonedas: tragamonedas,
+      };
+      localStorage.setItem(STORAGE_KEYS.CASH, JSON.stringify(updated));
+      return updated;
     });
   };
 
@@ -1085,6 +1141,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       openedAt: currentCash.openedAt,
       closedAt: Date.now(),
       initialCash: currentCash.initialCash,
+      initialCashGeneral: currentCash.initialCashGeneral || 100000,
+      initialCashTragamonedas: currentCash.initialCashTragamonedas || 55000,
       cashSales: todayCashSales,
       transferSales: todayTransferSales,
       totalSales: todaySalesTotal,
@@ -1138,11 +1196,15 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       notes: data.notes,
     };
 
-    setInventoryEntries(prev => [entry, ...prev]);
+    setInventoryEntries(prev => {
+      const updated = [entry, ...prev];
+      localStorage.setItem(STORAGE_KEYS.INVENTORY_ENTRIES, JSON.stringify(updated));
+      return updated;
+    });
 
-    // Update product stock and optionally unit cost
-    setProducts(prev =>
-      prev.map(p => {
+    // Update product stock and optionally unit cost immediately
+    setProducts(prev => {
+      const updated = prev.map(p => {
         if (p.id === data.productId) {
           return {
             ...p,
@@ -1151,36 +1213,49 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           };
         }
         return p;
-      })
-    );
+      });
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const saveProduct = (product: Product) => {
     setProducts(prev => {
       const exists = prev.some(p => p.id === product.id);
-      if (exists) {
-        return prev.map(p => (p.id === product.id ? product : p));
-      }
-      return [product, ...prev];
+      const updated = exists ? prev.map(p => (p.id === product.id ? product : p)) : [product, ...prev];
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      return updated;
     });
   };
 
   const deleteOrDeactivateProduct = (productId: string) => {
-    setProducts(prev =>
-      prev.map(p => (p.id === productId ? { ...p, isActive: false } : p))
-    );
+    setProducts(prev => {
+      const updated = prev.map(p => (p.id === productId ? { ...p, isActive: false } : p));
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const updateProductPrice = (productId: string, newPrice: number) => {
-    setProducts(prev =>
-      prev.map(p => (p.id === productId ? { ...p, price: Math.max(0, newPrice) } : p))
-    );
+    setProducts(prev => {
+      const updated = prev.map(p => (p.id === productId ? { ...p, price: Math.max(0, newPrice) } : p));
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      return updated;
+    });
   };
 
   const updateProductStock = (productId: string, newStock: number) => {
-    setProducts(prev =>
-      prev.map(p => (p.id === productId ? { ...p, stock: Math.max(0, newStock), trackStock: true } : p))
-    );
+    setProducts(prev => {
+      const updated = prev.map(p => (p.id === productId ? { ...p, stock: Math.max(0, newStock), trackStock: true } : p));
+      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(updated));
+      return updated;
+    });
+  };
+
+  const persistInventoryChanges = () => {
+    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    localStorage.setItem(STORAGE_KEYS.INVENTORY_ENTRIES, JSON.stringify(inventoryEntries));
+    return { success: true, count: products.length };
   };
 
   const saveConsoleRates = (consoleId: string, rates: XboxConsole['rates']) => {
@@ -1210,7 +1285,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       id: `cash-${getTodayDateString()}`,
       date: getTodayDateString(),
       openedAt: Date.now(),
-      initialCash: 50000,
+      initialCash: 155000,
+      initialCashGeneral: 100000,
+      initialCashTragamonedas: 55000,
       isOpen: true,
       withdrawals: [],
     });
@@ -1272,6 +1349,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         cancelXboxSession,
         addExpense,
         openCashRegister,
+        updateInitialCash,
         addCashWithdrawal,
         closeCashRegister,
         addInventoryEntry,
@@ -1280,6 +1358,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         updateProductPrice,
         updateProductStock,
         deleteOrDeactivateProduct,
+        persistInventoryChanges,
         saveConsoleRates,
         updateConsoleRates: saveConsoleRates,
         saveExtraControllerRates,

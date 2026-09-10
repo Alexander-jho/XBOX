@@ -11,6 +11,8 @@ export interface ExportDataParams {
   expenses: Expense[];
   closedSessions: ClosedConsoleSession[];
   initialCash: number;
+  initialCashGeneral?: number;
+  initialCashTragamonedas?: number;
   countedCash?: number;
   cashWithdrawals?: CashWithdrawal[];
   closureNotes?: string;
@@ -364,6 +366,14 @@ export function exportToPDF({
 
   doc.text(`(+) Base Inicial de Caja:`, rightX + 4, rightY);
   doc.text(formatCOP(initialCash), rightX + splitColW - 4, rightY, { align: 'right' });
+  if (initialCashGeneral || initialCashTragamonedas || initialCash === 155000) {
+    rightY += 3.8;
+    doc.setFontSize(6.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(`[Base: ${formatCOP(initialCashGeneral || 100000)} Operación + ${formatCOP(initialCashTragamonedas || 55000)} Tragamonedas]`, rightX + 4, rightY);
+    doc.setFontSize(8);
+    doc.setTextColor(51, 65, 85);
+  }
 
   rightY += 5.5;
   doc.text(`(+) Ventas en Efectivo:`, rightX + 4, rightY);
@@ -490,6 +500,122 @@ export function exportToPDF({
   doc.setTextColor(100, 116, 139);
   doc.text(`Firma Cajero/Operador: ${operatorName}`, marginX + 6, sigY + 4);
   doc.text('Firma Administrador / Supervisor', marginX + sigColW + 20, sigY + 4);
+
+  // -------------------------------------------------------------
+  // PÁGINA 2: DESGLOSE ÍTEM POR ÍTEM DE TRANSACCIONES DEL DÍA
+  // -------------------------------------------------------------
+  if (sales.length > 0) {
+    doc.addPage();
+    let p2Y = marginY;
+
+    // Header Page 2
+    doc.setFillColor(15, 23, 42);
+    doc.rect(marginX, p2Y, contentWidth, 12, 'F');
+    doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(255, 255, 255);
+    doc.text('DESGLOSE ÍTEM POR ÍTEM DE TRANSACCIONES DEL DÍA', marginX + 4, p2Y + 7.5);
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Período: ${periodLabel} | Total Registros: ${sales.length}`, marginX + contentWidth - 4, p2Y + 7.5, { align: 'right' });
+
+    p2Y += 16;
+
+    // Table Header
+    const colW2 = [18, 62, 32, 14, 26, 28]; // Total = 180mm
+    doc.setFillColor(241, 245, 249);
+    doc.rect(marginX, p2Y, contentWidth, 6, 'F');
+    doc.setDrawColor(203, 213, 225);
+    doc.rect(marginX, p2Y, contentWidth, 6, 'S');
+
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 41, 59);
+    doc.text('HORA', marginX + 2, p2Y + 4.2);
+    doc.text('ARTÍCULO / CONCEPTO', marginX + colW2[0] + 2, p2Y + 4.2);
+    doc.text('CATEGORÍA', marginX + colW2[0] + colW2[1] + 2, p2Y + 4.2);
+    doc.text('CANT', marginX + colW2[0] + colW2[1] + colW2[2] + 2, p2Y + 4.2);
+    doc.text('SUBTOTAL', marginX + colW2[0] + colW2[1] + colW2[2] + colW2[3] + 2, p2Y + 4.2);
+    doc.text('PAGO', marginX + colW2[0] + colW2[1] + colW2[2] + colW2[3] + colW2[4] + 2, p2Y + 4.2);
+
+    p2Y += 6;
+
+    // Flatten all items from sales
+    const allItems: {
+      time: string;
+      name: string;
+      category: string;
+      quantity: number;
+      subtotal: number;
+      payment: string;
+    }[] = [];
+
+    sales.forEach(sale => {
+      if (sale.items && sale.items.length > 0) {
+        sale.items.forEach(item => {
+          allItems.push({
+            time: sale.time || '--:--',
+            name: item.name,
+            category: item.category || (sale.area === 'xbox' ? 'Xbox' : sale.area === 'papeleria' ? 'Papelería' : 'Garguería'),
+            quantity: item.quantity,
+            subtotal: item.subtotal || (item.quantity * item.unitPrice),
+            payment: sale.paymentMethod.toUpperCase() + (sale.transferProvider ? ` (${sale.transferProvider})` : ''),
+          });
+        });
+      } else {
+        allItems.push({
+          time: sale.time || '--:--',
+          name: sale.notes || `Venta ${sale.area}`,
+          category: sale.area.toUpperCase(),
+          quantity: 1,
+          subtotal: sale.total,
+          payment: sale.paymentMethod.toUpperCase() + (sale.transferProvider ? ` (${sale.transferProvider})` : ''),
+        });
+      }
+    });
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(7);
+    doc.setTextColor(30, 41, 59);
+
+    allItems.forEach((it, idx) => {
+      if (p2Y > pageHeight - 35) {
+        doc.addPage();
+        p2Y = marginY;
+      }
+      const rowH = 5;
+      if (idx % 2 === 1) {
+        doc.setFillColor(248, 250, 252);
+        doc.rect(marginX, p2Y, contentWidth, rowH, 'F');
+      }
+      doc.setDrawColor(241, 245, 249);
+      doc.rect(marginX, p2Y, contentWidth, rowH, 'S');
+
+      doc.text(it.time, marginX + 2, p2Y + 3.5);
+      const safeName = it.name.length > 36 ? it.name.substring(0, 36) + '...' : it.name;
+      doc.text(safeName, marginX + colW2[0] + 2, p2Y + 3.5);
+      doc.text(it.category, marginX + colW2[0] + colW2[1] + 2, p2Y + 3.5);
+      doc.text(String(it.quantity), marginX + colW2[0] + colW2[1] + colW2[2] + 2, p2Y + 3.5);
+      doc.setFont('helvetica', 'bold');
+      doc.text(formatCOP(it.subtotal), marginX + colW2[0] + colW2[1] + colW2[2] + colW2[3] + 2, p2Y + 3.5);
+      doc.setFont('helvetica', 'normal');
+      doc.text(it.payment, marginX + colW2[0] + colW2[1] + colW2[2] + colW2[3] + colW2[4] + 2, p2Y + 3.5);
+
+      p2Y += rowH;
+    });
+
+    // Mandatory Bank Notice at Bottom of Page 2
+    const p2FooterY = pageHeight - 20;
+    doc.setFillColor(254, 243, 199);
+    doc.roundedRect(marginX, p2FooterY, contentWidth, 10, 1.5, 1.5, 'F');
+    doc.setDrawColor(245, 158, 11);
+    doc.setLineWidth(0.4);
+    doc.roundedRect(marginX, p2FooterY, contentWidth, 10, 1.5, 1.5, 'S');
+    doc.setFontSize(7.5);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(146, 64, 14);
+    doc.text(`AVISO OBLIGATORIO: "${BANK_ACCOUNT_NOTICE}"`, marginX + 4, p2FooterY + 6);
+  }
 
   // Save PDF
   const safeDate = startDate.replace(/[^a-zA-Z0-9-]/g, '_');

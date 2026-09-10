@@ -18,8 +18,8 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'u-cajero',
     username: 'cajero',
-    name: 'Cajero / Operador',
-    role: 'operador',
+    name: 'Cajero Principal',
+    role: 'cajero',
     password: 'cajero',
   },
 ];

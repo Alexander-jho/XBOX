@@ -18,6 +18,7 @@ import {
   Minus,
   DollarSign,
   BookOpen,
+  Save,
 } from 'lucide-react';
 import { formatCOP, getTodayDateString } from '../utils/formatters';
 
@@ -30,7 +31,11 @@ export const InventoryManager: React.FC = () => {
     addInventoryEntry,
     updateProductPrice,
     updateProductStock,
+    persistInventoryChanges,
   } = useApp();
+
+  // Notification Banner
+  const [notificationBanner, setNotificationBanner] = useState<string | null>(null);
 
   // Filters
   const [filterArea, setFilterArea] = useState<string>('todos');
@@ -155,6 +160,18 @@ export const InventoryManager: React.FC = () => {
 
     saveProduct(newOrUpdated);
     setShowProductModal(false);
+    setNotificationBanner(`✓ ¡Cambios guardados con éxito! El producto "${newOrUpdated.name}" ha sido actualizado y persistido.`);
+    setTimeout(() => {
+      setNotificationBanner(null);
+    }, 4500);
+  };
+
+  const handleExplicitSaveInventory = () => {
+    const res = persistInventoryChanges();
+    setNotificationBanner(`✓ ¡Cambios guardados con éxito en la base de datos local! Se aseguraron ${res.count} productos y el stock permanece sincronizado.`);
+    setTimeout(() => {
+      setNotificationBanner(null);
+    }, 4500);
   };
 
   const handleSaveInventoryEntrySubmit = (e: React.FormEvent) => {
@@ -179,7 +196,11 @@ export const InventoryManager: React.FC = () => {
       notes: entryNotes.trim() || undefined,
     });
 
-    alert('¡Entrada de inventario registrada con éxito! El stock ha sido actualizado.');
+    setNotificationBanner('✓ ¡Entrada de mercadería guardada con éxito! El stock ha sido actualizado e impactado en la base de datos local.');
+    setTimeout(() => {
+      setNotificationBanner(null);
+    }, 4500);
+
     setShowEntryModal(false);
     setEntryQuantity('10');
     setEntryUnitCost('');
@@ -207,7 +228,18 @@ export const InventoryManager: React.FC = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          {/* BOTÓN OBLIGATORIO: GUARDAR CAMBIOS */}
+          <button
+            id="btn-guardar-cambios-inventario"
+            onClick={handleExplicitSaveInventory}
+            className="px-4 py-2.5 bg-slate-900 hover:bg-slate-800 active:scale-95 text-white font-black rounded-xl text-xs sm:text-sm shadow-md flex items-center gap-2 cursor-pointer transition-all border border-slate-700"
+            title="Guardar y confirmar inmediatamente todos los cambios en la base de datos local"
+          >
+            <Save className="w-4 h-4 text-emerald-400" />
+            <span>Guardar cambios</span>
+          </button>
+
           {/* + ENTRADA DE INVENTARIO (Item 13 in Prompt) */}
           <button
             id="btn-nueva-entrada-inventario"
@@ -234,6 +266,22 @@ export const InventoryManager: React.FC = () => {
           </button>
         </div>
       </div>
+
+      {/* Confirmation & Alert Toast Banner */}
+      {notificationBanner && (
+        <div className="bg-emerald-600 text-white p-3.5 rounded-2xl shadow-lg shadow-emerald-950/20 flex items-center justify-between text-xs sm:text-sm font-black animate-in fade-in">
+          <div className="flex items-center gap-2.5">
+            <CheckCircle2 className="w-5 h-5 shrink-0 text-emerald-200" />
+            <span>{notificationBanner}</span>
+          </div>
+          <button
+            onClick={() => setNotificationBanner(null)}
+            className="hover:bg-emerald-700 p-1.5 rounded-lg text-emerald-100 transition-colors cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
 
       {/* Filter and Search Bar */}
       <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
@@ -651,9 +699,11 @@ export const InventoryManager: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer"
+                  id="btn-guardar-cambios-entrada"
+                  className="px-5 py-2.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black rounded-xl text-xs shadow-md cursor-pointer flex items-center gap-1.5"
                 >
-                  Confirmar Entrada
+                  <Save className="w-4 h-4" />
+                  <span>Guardar cambios de entrada</span>
                 </button>
               </div>
             </form>
@@ -819,9 +869,11 @@ export const InventoryManager: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer"
+                  id="btn-guardar-cambios-producto"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black rounded-xl text-xs shadow-md cursor-pointer flex items-center gap-1.5"
                 >
-                  Guardar Producto
+                  <Save className="w-4 h-4" />
+                  <span>Guardar cambios</span>
                 </button>
               </div>
             </form>
@@ -851,6 +903,8 @@ export const InventoryManager: React.FC = () => {
                 e.preventDefault();
                 const cleanPrice = parseFloat(newPriceInput.replace(/\D/g, '')) || 0;
                 updateProductPrice(quickPriceProduct.id, cleanPrice);
+                setNotificationBanner(`✓ ¡Precio de "${quickPriceProduct.name}" actualizado a ${formatCOP(cleanPrice)} y guardado con éxito!`);
+                setTimeout(() => setNotificationBanner(null), 4500);
                 setQuickPriceProduct(null);
               }}
               className="p-5 space-y-4"
@@ -903,9 +957,11 @@ export const InventoryManager: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer"
+                  id="btn-guardar-cambios-precio"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-black rounded-xl text-xs shadow-md cursor-pointer flex items-center gap-1.5"
                 >
-                  Actualizar Precio
+                  <Save className="w-4 h-4" />
+                  <span>Guardar cambios</span>
                 </button>
               </div>
             </form>
@@ -935,6 +991,8 @@ export const InventoryManager: React.FC = () => {
                 e.preventDefault();
                 const cleanStock = parseInt(newStockInput.replace(/\D/g, '')) || 0;
                 updateProductStock(quickStockProduct.id, cleanStock);
+                setNotificationBanner(`✓ ¡Stock de "${quickStockProduct.name}" ajustado a ${cleanStock} unidades y guardado con éxito!`);
+                setTimeout(() => setNotificationBanner(null), 4500);
                 setQuickStockProduct(null);
               }}
               className="p-5 space-y-4"
@@ -987,9 +1045,11 @@ export const InventoryManager: React.FC = () => {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs shadow-md cursor-pointer"
+                  id="btn-guardar-cambios-stock"
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-black rounded-xl text-xs shadow-md cursor-pointer flex items-center gap-1.5"
                 >
-                  Guardar Stock
+                  <Save className="w-4 h-4" />
+                  <span>Guardar cambios</span>
                 </button>
               </div>
             </form>

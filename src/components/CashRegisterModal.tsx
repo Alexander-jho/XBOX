@@ -19,10 +19,15 @@ import {
   Copy,
   Check,
   CreditCard,
+  Search,
+  Filter,
+  Save,
+  Clock,
+  ListOrdered,
 } from 'lucide-react';
 import { formatCOP, formatFullDateEs, formatShortTime, BANK_ACCOUNT_NOTICE, BANK_ACCOUNT_NUMBER } from '../utils/formatters';
 import { exportToPDF } from '../utils/exportUtils';
-import { CashClosure } from '../types';
+import { CashClosure, BusinessArea } from '../types';
 
 interface CashRegisterModalProps {
   isOpen: boolean;
@@ -51,6 +56,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
     todayProductsSoldCount,
     cashClosures,
     openCashRegister,
+    updateInitialCash,
     addCashWithdrawal,
     closeCashRegister,
     sales,
@@ -59,13 +65,17 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
     currentUser,
   } = useApp();
 
-  const [activeTab, setActiveTab] = useState<'arqueo' | 'retiro' | 'historial'>('arqueo');
+  const [activeTab, setActiveTab] = useState<'arqueo' | 'desglose' | 'retiro' | 'historial'>('arqueo');
   const [copiedBank, setCopiedBank] = useState(false);
 
-  // Base inicial config
-  const [initialBaseInput, setInitialBaseInput] = useState<string>(
-    currentCash.initialCash ? String(currentCash.initialCash) : '50000'
+  // Base inicial config ($155,000 COP: $100,000 General + $55,000 Tragamonedas)
+  const [initialBaseGeneralInput, setInitialBaseGeneralInput] = useState<string>(
+    String(currentCash.initialCashGeneral || 100000)
   );
+  const [initialBaseTragaInput, setInitialBaseTragaInput] = useState<string>(
+    String(currentCash.initialCashTragamonedas || 55000)
+  );
+  const [baseFeedbackMessage, setBaseFeedbackMessage] = useState<string | null>(null);
 
   // Retiro de efectivo
   const [withdrawalAmount, setWithdrawalAmount] = useState<string>('');
@@ -75,6 +85,11 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
   const [countedCashInput, setCountedCashInput] = useState<string>('');
   const [closureNotes, setClosureNotes] = useState<string>('');
   const [closureSuccessMessage, setClosureSuccessMessage] = useState<string | null>(null);
+  const [isSubmittingClosure, setIsSubmittingClosure] = useState<boolean>(false);
+
+  // Desglose tab filters
+  const [itemSearchQuery, setItemSearchQuery] = useState<string>('');
+  const [itemAreaFilter, setItemAreaFilter] = useState<'all' | BusinessArea>('all');
 
   if (!isOpen) return null;
 
@@ -83,6 +98,74 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
   const isDiffZero = Math.abs(diff) <= 50;
   const isMissing = diff < -50;
   const isSurplus = diff > 50;
+
+  // Flatten all items sold today
+  const todaySales = sales.filter(s => s.date === todayDate);
+  const allTodayItems: {
+    id: string;
+    saleId: string;
+    time: string;
+    name: string;
+    category: string;
+    area: BusinessArea;
+    quantity: number;
+    unitPrice: number;
+    subtotal: number;
+    paymentMethod: string;
+    transferProvider?: string;
+    customerName?: string;
+    notes?: string;
+  }[] = [];
+
+  todaySales.forEach(sale => {
+    if (sale.items && sale.items.length > 0) {
+      sale.items.forEach((it, idx) => {
+        allTodayItems.push({
+          id: `${sale.id}-item-${idx}`,
+          saleId: sale.id,
+          time: sale.time || '--:--',
+          name: it.name,
+          category: it.category || (sale.area === 'xbox' ? 'Xbox' : sale.area === 'papeleria' ? 'Papelería' : 'Garguería'),
+          area: sale.area,
+          quantity: it.quantity,
+          unitPrice: it.unitPrice,
+          subtotal: it.subtotal || (it.quantity * it.unitPrice),
+          paymentMethod: sale.paymentMethod,
+          transferProvider: sale.transferProvider,
+          customerName: sale.customerName,
+          notes: sale.notes,
+        });
+      });
+    } else {
+      allTodayItems.push({
+        id: `${sale.id}-single`,
+        saleId: sale.id,
+        time: sale.time || '--:--',
+        name: sale.notes || `Servicio / Venta ${sale.area}`,
+        category: sale.area.toUpperCase(),
+        area: sale.area,
+        quantity: 1,
+        unitPrice: sale.total,
+        subtotal: sale.total,
+        paymentMethod: sale.paymentMethod,
+        transferProvider: sale.transferProvider,
+        customerName: sale.customerName,
+        notes: sale.notes,
+      });
+    }
+  });
+
+  const filteredItems = allTodayItems.filter(item => {
+    if (itemAreaFilter !== 'all' && item.area !== itemAreaFilter) return false;
+    if (itemSearchQuery.trim()) {
+      const q = itemSearchQuery.toLowerCase();
+      const matchName = item.name.toLowerCase().includes(q);
+      const matchCategory = item.category.toLowerCase().includes(q);
+      const matchCustomer = item.customerName?.toLowerCase().includes(q) || false;
+      if (!matchName && !matchCategory && !matchCustomer) return false;
+    }
+    return true;
+  });
 
   const handleCopyBank = () => {
     navigator.clipboard?.writeText(BANK_ACCOUNT_NUMBER);
@@ -106,6 +189,8 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
       expenses: todayExpensesList,
       closedSessions: todaySessionsList,
       initialCash: currentCash.initialCash,
+      initialCashGeneral: currentCash.initialCashGeneral || 100000,
+      initialCashTragamonedas: currentCash.initialCashTragamonedas || 55000,
       countedCash: parsedCountedCash > 0 ? parsedCountedCash : undefined,
       cashWithdrawals: currentCash.withdrawals,
       closureNotes: closureNotes.trim() || undefined,
@@ -136,9 +221,20 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
   };
 
   const handleUpdateBase = () => {
-    const val = parseFloat(initialBaseInput.replace(/\D/g, '')) || 0;
-    openCashRegister(val);
-    alert(`Base inicial actualizada a ${formatCOP(val)}`);
+    const general = parseFloat(initialBaseGeneralInput.replace(/\D/g, '')) || 0;
+    const traga = parseFloat(initialBaseTragaInput.replace(/\D/g, '')) || 0;
+    const total = general + traga;
+    updateInitialCash(total, general, traga);
+    setBaseFeedbackMessage(`✓ Base actualizada: ${formatCOP(total)} (${general.toLocaleString('es-CO')} General + ${traga.toLocaleString('es-CO')} Tragamonedas)`);
+    setTimeout(() => setBaseFeedbackMessage(null), 3500);
+  };
+
+  const handleApplyDefaultBase = () => {
+    setInitialBaseGeneralInput('100000');
+    setInitialBaseTragaInput('55000');
+    updateInitialCash(155000, 100000, 55000);
+    setBaseFeedbackMessage(`✓ Base oficial restaurada: ${formatCOP(155000)} ($100.000 General + $55.000 Tragamonedas)`);
+    setTimeout(() => setBaseFeedbackMessage(null), 3500);
   };
 
   const handleCreateWithdrawal = (e: React.FormEvent) => {
@@ -155,6 +251,7 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
   };
 
   const handleConfirmClosure = () => {
+    if (isSubmittingClosure) return;
     if (countedCashInput === '') {
       alert('Por favor ingrese el efectivo contado en billetes y monedas.');
       return;
@@ -163,12 +260,18 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
       return;
     }
 
-    const closure = closeCashRegister(parsedCountedCash, closureNotes.trim() || undefined);
-    setClosureSuccessMessage(`¡Cierre de caja guardado con éxito! Estado: ${closure.status.toUpperCase()}`);
-    setTimeout(() => {
-      setClosureSuccessMessage(null);
-      onClose();
-    }, 1200);
+    setIsSubmittingClosure(true);
+    try {
+      const closure = closeCashRegister(parsedCountedCash, closureNotes.trim() || undefined);
+      setClosureSuccessMessage(`¡Cierre de caja guardado con éxito! Estado: ${closure.status.toUpperCase()}`);
+      setTimeout(() => {
+        setClosureSuccessMessage(null);
+        setIsSubmittingClosure(false);
+        onClose();
+      }, 1200);
+    } catch {
+      setIsSubmittingClosure(false);
+    }
   };
 
   return (
@@ -196,37 +299,48 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex items-center border-b border-slate-200 bg-slate-50 px-4 pt-2 gap-2 text-xs font-bold">
+        <div className="flex items-center border-b border-slate-200 bg-slate-50 px-4 pt-2 gap-2 text-xs font-bold overflow-x-auto">
           <button
             onClick={() => setActiveTab('arqueo')}
-            className={`pb-2.5 px-3 border-b-2 cursor-pointer transition-colors ${
+            className={`pb-2.5 px-3 border-b-2 whitespace-nowrap cursor-pointer transition-colors ${
               activeTab === 'arqueo'
-                ? 'border-emerald-600 text-emerald-800'
+                ? 'border-emerald-600 text-emerald-800 font-black'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
-            💵 Arqueo y Cierre del Día
+            💵 Arqueo y Balance
+          </button>
+          <button
+            onClick={() => setActiveTab('desglose')}
+            className={`pb-2.5 px-3 border-b-2 whitespace-nowrap cursor-pointer transition-colors ${
+              activeTab === 'desglose'
+                ? 'border-emerald-600 text-emerald-800 font-black'
+                : 'border-transparent text-slate-500 hover:text-slate-900'
+            }`}
+          >
+            <ListOrdered className="w-3.5 h-3.5 inline mr-1" />
+            Desglose Ítem por Ítem ({allTodayItems.length})
           </button>
           <button
             onClick={() => setActiveTab('retiro')}
-            className={`pb-2.5 px-3 border-b-2 cursor-pointer transition-colors ${
+            className={`pb-2.5 px-3 border-b-2 whitespace-nowrap cursor-pointer transition-colors ${
               activeTab === 'retiro'
-                ? 'border-emerald-600 text-emerald-800'
+                ? 'border-emerald-600 text-emerald-800 font-black'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
-            💸 Retiro de Efectivo ({currentCash.withdrawals.length})
+            💸 Retiros ({currentCash.withdrawals.length})
           </button>
           <button
             onClick={() => setActiveTab('historial')}
-            className={`pb-2.5 px-3 border-b-2 cursor-pointer transition-colors ${
+            className={`pb-2.5 px-3 border-b-2 whitespace-nowrap cursor-pointer transition-colors ${
               activeTab === 'historial'
-                ? 'border-emerald-600 text-emerald-800'
+                ? 'border-emerald-600 text-emerald-800 font-black'
                 : 'border-transparent text-slate-500 hover:text-slate-900'
             }`}
           >
             <History className="w-3.5 h-3.5 inline mr-1" />
-            Historial de Cierres ({cashClosures.length})
+            Historial Cierres ({cashClosures.length})
           </button>
         </div>
 
@@ -268,23 +382,64 @@ export const CashRegisterModal: React.FC<CashRegisterModalProps> = ({
                   </span>
                 </div>
 
-                {/* Base inicial config */}
-                <div className="flex items-center justify-between text-xs sm:text-sm">
-                  <span className="text-slate-700 font-medium">Base Inicial en Efectivo:</span>
-                  <div className="flex items-center gap-2">
-                    <input
-                      type="number"
-                      value={initialBaseInput ?? ''}
-                      onChange={e => setInitialBaseInput(e.target.value)}
-                      className="w-28 bg-white border border-slate-300 rounded px-2 py-1 text-right font-bold text-xs"
-                    />
+                {/* Base inicial config ($155.000 COP) */}
+                <div className="bg-white rounded-xl p-3 border border-slate-200 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                    <div>
+                      <span className="text-xs font-black text-slate-800 block">BASE INICIAL DE CAJA ($155.000 COP)</span>
+                      <span className="text-[10px] text-slate-500">Distribución obligatoria: $100.000 Operación General + $55.000 Tragamonedas</span>
+                    </div>
                     <button
-                      onClick={handleUpdateBase}
-                      className="px-2 py-1 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded text-[11px] font-bold cursor-pointer"
+                      type="button"
+                      onClick={handleApplyDefaultBase}
+                      className="self-start sm:self-auto px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[11px] font-black cursor-pointer transition-all active:scale-95"
                     >
-                      Guardar
+                      Restablecer Base Oficial ($155.000)
                     </button>
                   </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
+                      <label className="text-[10px] uppercase font-bold text-slate-600 block mb-0.5">Base Operación General ($):</label>
+                      <input
+                        type="number"
+                        value={initialBaseGeneralInput}
+                        onChange={e => setInitialBaseGeneralInput(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-sm font-black text-slate-800"
+                        placeholder="100000"
+                      />
+                    </div>
+                    <div className="bg-slate-50 p-2 rounded-lg border border-slate-200">
+                      <label className="text-[10px] uppercase font-bold text-slate-600 block mb-0.5">Base Tragamonedas ($):</label>
+                      <input
+                        type="number"
+                        value={initialBaseTragaInput}
+                        onChange={e => setInitialBaseTragaInput(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded px-2 py-1 text-sm font-black text-slate-800"
+                        placeholder="55000"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs font-bold text-slate-700">
+                      Total Base en Caja: <strong className="text-emerald-700 font-black">{formatCOP((parseFloat(initialBaseGeneralInput.replace(/\D/g, '')) || 0) + (parseFloat(initialBaseTragaInput.replace(/\D/g, '')) || 0))}</strong>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={handleUpdateBase}
+                      className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-lg text-xs font-black flex items-center gap-1.5 cursor-pointer active:scale-95 shadow-xs"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span>Guardar cambios de base</span>
+                    </button>
+                  </div>
+
+                  {baseFeedbackMessage && (
+                    <div className="p-2 bg-emerald-50 border border-emerald-300 text-emerald-800 rounded-lg text-xs font-bold text-center animate-in fade-in">
+                      {baseFeedbackMessage}
+                    </div>
+                  )}
                 </div>
 
                 {/* Formula lines */}
