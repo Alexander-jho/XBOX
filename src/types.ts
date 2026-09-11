@@ -154,6 +154,9 @@ export interface Sale {
   customerName?: string;
   customerPhone?: string;
   creditId?: string;
+  editedAt?: number;
+  editedBy?: string;
+  originalTotal?: number;
 }
 
 export interface Expense {

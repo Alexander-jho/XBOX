@@ -7,6 +7,7 @@ import {
   ClosedConsoleSession,
   SessionProductItem,
   Sale,
+  SaleItem,
   Expense,
   CurrentCashRegister,
   CashClosure,
@@ -28,7 +29,7 @@ import {
   INITIAL_PRODUCTS,
   INITIAL_USERS,
 } from '../data/initialData';
-import { getTodayDateString, getCurrentTimeString, playAlertSound } from '../utils/formatters';
+import { getTodayDateString, getCurrentTimeString, playAlertSound, formatCOP } from '../utils/formatters';
 
 interface AppContextType {
   // Authentication & Users
@@ -219,6 +220,22 @@ interface AppContextType {
   updateExtraControllerRates: (rates: ExtraControllerRate[]) => void;
   resetToDefaults: () => void;
   resetToInitialDefaults: () => void;
+  editSale: (
+    saleId: string,
+    updatedData: {
+      items: SaleItem[];
+      total: number;
+      paymentMethod: PaymentMethod;
+      transferProvider?: TransferProvider;
+      transferReference?: string;
+      notes?: string;
+      date?: string;
+      time?: string;
+      customerName?: string;
+      customerPhone?: string;
+    }
+  ) => Promise<{ success: boolean; message: string }>;
+  deleteSale: (saleId: string, returnStock?: boolean) => Promise<{ success: boolean; message: string }>;
   isOnlineSyncActive: boolean;
   cloudSyncStatus: CloudSyncStatus;
   cloudVersion: number;
@@ -1311,6 +1328,167 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     return newSale;
   };
 
+  // Admin Edit Sale Functionality (Re-adjusts stock, recalculates cash register, updates credit balance if linked)
+  const editSale = async (
+    saleId: string,
+    updatedData: {
+      items: SaleItem[];
+      total: number;
+      paymentMethod: PaymentMethod;
+      transferProvider?: TransferProvider;
+      transferReference?: string;
+      notes?: string;
+      date?: string;
+      time?: string;
+      customerName?: string;
+      customerPhone?: string;
+    }
+  ): Promise<{ success: boolean; message: string }> => {
+    const existingSale = sales.find(s => s.id === saleId);
+    if (!existingSale) {
+      return { success: false, message: 'Venta no encontrada en el historial' };
+    }
+
+    // 1. Re-adjust inventory stock
+    setProducts(prevProducts => {
+      let updated = [...prevProducts];
+      let hasChanges = false;
+
+      // Add back old quantities
+      existingSale.items.forEach(oldItem => {
+        if (oldItem.productId) {
+          const idx = updated.findIndex(p => p.id === oldItem.productId);
+          if (idx !== -1 && updated[idx].trackStock) {
+            updated[idx] = {
+              ...updated[idx],
+              stock: updated[idx].stock + oldItem.quantity,
+            };
+            hasChanges = true;
+          }
+        }
+      });
+
+      // Subtract new quantities
+      updatedData.items.forEach(newItem => {
+        if (newItem.productId) {
+          const idx = updated.findIndex(p => p.id === newItem.productId);
+          if (idx !== -1 && updated[idx].trackStock) {
+            updated[idx] = {
+              ...updated[idx],
+              stock: Math.max(0, updated[idx].stock - newItem.quantity),
+            };
+            hasChanges = true;
+          }
+        }
+      });
+
+      if (hasChanges) {
+        broadcastChange(STORAGE_KEYS.PRODUCTS, updated);
+      }
+      return updated;
+    });
+
+    // 2. If it was associated with a CreditAccount, adjust credit balance
+    if (existingSale.creditId) {
+      setCredits(prevCredits => {
+        const updated = prevCredits.map(c => {
+          if (c.id === existingSale.creditId || c.saleId === saleId) {
+            const diff = updatedData.total - existingSale.total;
+            const newBal = Math.max(0, c.currentBalance + diff);
+            return {
+              ...c,
+              saleTotal: updatedData.total,
+              currentBalance: newBal,
+              itemsSummary: updatedData.items.map(i => `${i.quantity}x ${i.name}`).join(', '),
+              customerName: updatedData.customerName || c.customerName,
+              customerPhone: updatedData.customerPhone || c.customerPhone,
+              notes: updatedData.notes || c.notes,
+            };
+          }
+          return c;
+        });
+        broadcastChange(STORAGE_KEYS.CREDITS, updated);
+        return updated;
+      });
+    }
+
+    // 3. Update the sale record
+    const updatedSale: Sale = {
+      ...existingSale,
+      items: updatedData.items,
+      total: updatedData.total,
+      paymentMethod: updatedData.paymentMethod,
+      transferProvider: updatedData.transferProvider,
+      transferReference: updatedData.transferReference,
+      notes: updatedData.notes,
+      date: updatedData.date || existingSale.date,
+      time: updatedData.time || existingSale.time,
+      customerName: updatedData.customerName,
+      customerPhone: updatedData.customerPhone,
+      editedAt: Date.now(),
+      editedBy: currentUser.name || currentUser.username,
+      originalTotal: existingSale.originalTotal || existingSale.total,
+    };
+
+    setSales(prevSales => {
+      const updated = prevSales.map(s => (s.id === saleId ? updatedSale : s));
+      broadcastChange(STORAGE_KEYS.SALES, updated);
+      return updated;
+    });
+
+    return {
+      success: true,
+      message: `Venta modificada exitosamente. Total: ${formatCOP(updatedData.total)}. El stock y el arqueo de caja se han actualizado automáticamente.`,
+    };
+  };
+
+  // Admin Delete Sale Functionality (Optionally restores stock, cleans up sales and credits)
+  const deleteSale = async (saleId: string, returnStock: boolean = true): Promise<{ success: boolean; message: string }> => {
+    const existingSale = sales.find(s => s.id === saleId);
+    if (!existingSale) {
+      return { success: false, message: 'Venta no encontrada' };
+    }
+
+    if (returnStock) {
+      setProducts(prevProducts => {
+        let updated = [...prevProducts];
+        let hasChanges = false;
+        existingSale.items.forEach(oldItem => {
+          if (oldItem.productId) {
+            const idx = updated.findIndex(p => p.id === oldItem.productId);
+            if (idx !== -1 && updated[idx].trackStock) {
+              updated[idx] = {
+                ...updated[idx],
+                stock: updated[idx].stock + oldItem.quantity,
+              };
+              hasChanges = true;
+            }
+          }
+        });
+        if (hasChanges) {
+          broadcastChange(STORAGE_KEYS.PRODUCTS, updated);
+        }
+        return updated;
+      });
+    }
+
+    if (existingSale.creditId) {
+      setCredits(prev => {
+        const updated = prev.filter(c => c.id !== existingSale.creditId && c.saleId !== saleId);
+        broadcastChange(STORAGE_KEYS.CREDITS, updated);
+        return updated;
+      });
+    }
+
+    setSales(prev => {
+      const updated = prev.filter(s => s.id !== saleId);
+      broadcastChange(STORAGE_KEYS.SALES, updated);
+      return updated;
+    });
+
+    return { success: true, message: 'Venta anulada correctamente del historial permanente y stock reintegrado.' };
+  };
+
   // Open Account for Consoles
   const startXboxSession = (params: {
     consoleId: string;
@@ -1847,6 +2025,97 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   };
 
+  const retryConnection = async (): Promise<boolean> => {
+    setCloudSyncStatus('connecting');
+    const start = Date.now();
+    try {
+      const res = await fetch('/api/ping');
+      const data = await res.json();
+      const elapsed = Date.now() - start;
+      setLatencyMs(elapsed);
+      if (data && data.ok) {
+        setCloudSyncStatus('online');
+        setIsOnlineSyncActive(true);
+        setLastSyncTimestamp(Date.now());
+        setLastSyncErrorMessage(undefined);
+        await forceFullSync();
+        return true;
+      }
+      setCloudSyncStatus('offline');
+      setLastSyncErrorMessage('El servidor central no respondió');
+      return false;
+    } catch (err: any) {
+      setCloudSyncStatus('offline');
+      setLastSyncErrorMessage(err?.message || 'Error al conectar con la base de datos');
+      return false;
+    }
+  };
+
+  const forceFullSync = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/db');
+      const json = await res.json();
+      if (json && json.success && json.db) {
+        const db = json.db;
+        setCloudVersion(db.version || 1);
+        setCloudSyncStatus('online');
+        setIsOnlineSyncActive(true);
+        setLastSyncTimestamp(Date.now());
+        isReceivingRemoteSync.current = true;
+        if (Array.isArray(db.products) && db.products.length > 0) setProducts(db.products);
+        if (Array.isArray(db.consoles) && db.consoles.length > 0) setConsoles(db.consoles);
+        if (Array.isArray(db.extraControllerRates) && db.extraControllerRates.length > 0) setExtraControllerRates(db.extraControllerRates);
+        if (Array.isArray(db.users) && db.users.length > 0) setUsers(db.users);
+        if (Array.isArray(db.sales)) setSales(db.sales);
+        if (Array.isArray(db.expenses)) setExpenses(db.expenses);
+        if (Array.isArray(db.sessions)) setActiveSessions(db.sessions);
+        if (Array.isArray(db.closedSessions)) setClosedSessions(db.closedSessions);
+        if (Array.isArray(db.inventoryEntries)) setInventoryEntries(db.inventoryEntries);
+        if (Array.isArray(db.cashClosures)) setCashClosures(db.cashClosures);
+        if (db.cash) setCurrentCash(db.cash);
+        if (db.accountSeq) setAccountSeq(db.accountSeq);
+        if (Array.isArray(db.credits)) {
+          setCredits(db.credits.filter((c: any) => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez'));
+        }
+        setTimeout(() => {
+          isReceivingRemoteSync.current = false;
+        }, 120);
+        return true;
+      }
+      return false;
+    } catch (e: any) {
+      console.warn('forceFullSync error:', e);
+      return false;
+    }
+  };
+
+  const syncDiagnostics: SyncDiagnosticInfo = useMemo(() => {
+    const isOnline = cloudSyncStatus === 'online';
+    const statusLabel =
+      cloudSyncStatus === 'online'
+        ? 'En línea • Sincronizado'
+        : cloudSyncStatus === 'connecting'
+        ? 'Conectando...'
+        : cloudSyncStatus === 'reconnecting'
+        ? 'Reconectando...'
+        : 'Modo Local (Offline)';
+
+    return {
+      status: cloudSyncStatus,
+      statusLabel,
+      isOnline,
+      version: cloudVersion,
+      latencyMs,
+      lastSyncTimestamp,
+      pendingQueueCount,
+      lastSyncTimeFormatted: lastSyncTimestamp
+        ? new Date(lastSyncTimestamp).toLocaleTimeString('es-CO')
+        : 'Reciente',
+      isFallbackActive: !isOnline,
+      errorMessage: lastSyncErrorMessage,
+    };
+  }, [cloudSyncStatus, cloudVersion, latencyMs, lastSyncTimestamp, pendingQueueCount, lastSyncErrorMessage]);
+
   return (
     <AppContext.Provider
       value={{
@@ -1893,6 +2162,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         todayTransferCreditPayments,
         todayCreditPaymentsTotal,
         registerSale,
+        editSale,
+        deleteSale,
         startXboxSession,
         addTimeToSession,
         addProductToSession,
@@ -1921,6 +2192,9 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         isOnlineSyncActive,
         cloudSyncStatus,
         cloudVersion,
+        syncDiagnostics,
+        retryConnection,
+        forceFullSync,
       }}
     >
       {children}
