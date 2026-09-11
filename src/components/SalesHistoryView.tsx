@@ -188,42 +188,59 @@ export const SalesHistoryView: React.FC = () => {
   const handleUpdateItemQuantity = (index: number, delta: number) => {
     setEditItems(prev => {
       const updated = [...prev];
-      const item = updated[index];
+      const item = { ...updated[index] };
       const newQty = Math.max(1, item.quantity + delta);
       item.quantity = newQty;
       item.subtotal = item.unitPrice * newQty;
+      updated[index] = item;
       return updated;
     });
   };
 
   const handleSetItemQuantityDirect = (index: number, val: string) => {
-    const qty = parseInt(val.replace(/\D/g, ''), 10) || 1;
+    const raw = parseInt(val.replace(/\D/g, ''), 10);
+    const qty = isNaN(raw) ? 1 : Math.max(1, raw);
     setEditItems(prev => {
       const updated = [...prev];
-      const item = updated[index];
-      item.quantity = Math.max(1, qty);
+      const item = { ...updated[index] };
+      item.quantity = qty;
       item.subtotal = item.unitPrice * item.quantity;
+      updated[index] = item;
       return updated;
     });
   };
 
   const handleSetItemPriceDirect = (index: number, val: string) => {
-    const price = parseFloat(val.replace(/\D/g, '')) || 0;
+    const raw = parseFloat(val.replace(/[^\d]/g, '')) || 0;
     setEditItems(prev => {
       const updated = [...prev];
-      const item = updated[index];
-      item.unitPrice = price;
-      item.subtotal = price * item.quantity;
+      const item = { ...updated[index] };
+      item.unitPrice = Math.max(0, raw);
+      item.subtotal = item.unitPrice * item.quantity;
+      updated[index] = item;
       return updated;
     });
   };
 
   const handleRemoveItemFromEdit = (index: number) => {
     if (editItems.length <= 1) {
-      alert('La venta debe contener al menos un producto. Si desea cancelar toda la venta, utilice la opción Anular.');
+      const wantAnnul = window.confirm(
+        'Este es el único producto registrado en la venta. Si lo retira, la transacción quedará sin artículos.\n\n¿Desea ANULAR y ELIMINAR la venta completa del historial devolviendo las unidades al inventario?'
+      );
+      if (wantAnnul && editingSale) {
+        const sale = editingSale;
+        setEditingSale(null);
+        setSaleToDelete(sale);
+      }
       return;
     }
-    setEditItems(prev => prev.filter((_, i) => i !== index));
+    const itemToRemove = editItems[index];
+    const confirmRemove = window.confirm(
+      `¿Quitar "${itemToRemove.name}" de esta venta?\nSus ${itemToRemove.quantity} unidad(es) retornarán automáticamente al stock de inventario al guardar.`
+    );
+    if (confirmRemove) {
+      setEditItems(prev => prev.filter((_, i) => i !== index));
+    }
   };
 
   const handleAddItemToEdit = () => {
@@ -862,14 +879,44 @@ export const SalesHistoryView: React.FC = () => {
               )}
             </div>
 
-            <div className="pt-2">
+            <div className="pt-2 flex items-center gap-2">
               <button
                 type="button"
                 onClick={() => setSelectedSaleDetail(null)}
-                className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs cursor-pointer"
+                className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs cursor-pointer transition-colors"
               >
                 Cerrar Detalle
               </button>
+              {isAdmin && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const s = selectedSaleDetail;
+                      setSelectedSaleDetail(null);
+                      handleOpenEditSale(s);
+                    }}
+                    className="px-3.5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    title="Editar productos, unidades o precios de esta venta"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                    <span>Editar Venta</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const s = selectedSaleDetail;
+                      setSelectedSaleDetail(null);
+                      setSaleToDelete(s);
+                    }}
+                    className="px-3 py-2.5 bg-rose-600 hover:bg-rose-500 text-white font-bold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs transition-colors"
+                    title="Anular y borrar venta, devolviendo unidades al inventario"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Anular</span>
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -946,59 +993,78 @@ export const SalesHistoryView: React.FC = () => {
                   Artículos de la Venta ({editItems.length})
                 </label>
 
-                <div className="space-y-2 border border-slate-200 rounded-2xl p-3 bg-slate-50 max-h-60 overflow-y-auto">
+                <div className="space-y-2 border border-slate-200 rounded-2xl p-3 bg-slate-50 max-h-64 overflow-y-auto">
                   {editItems.map((item, index) => (
                     <div
                       key={index}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-2xs"
+                      className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-white rounded-xl border border-slate-200 shadow-2xs hover:border-slate-300 transition-colors"
                     >
-                      <div className="flex-1">
+                      {/* Product Name & Editable Price */}
+                      <div className="flex-1 min-w-[180px]">
                         <span className="font-black text-slate-900 text-xs sm:text-sm block">
                           {item.name}
                         </span>
-                        <span className="text-[11px] text-slate-500">
-                          Precio Unitario: {formatCOP(item.unitPrice)}
-                        </span>
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <label className="text-[11px] font-bold text-slate-500">Precio Unitario ($):</label>
+                          <input
+                            type="number"
+                            min="0"
+                            step="100"
+                            value={item.unitPrice}
+                            onChange={e => handleSetItemPriceDirect(index, e.target.value)}
+                            className="w-24 bg-slate-50 border border-slate-300 rounded-lg px-2 py-0.5 text-xs font-black text-slate-900 focus:bg-white focus:border-indigo-600 outline-none"
+                            title="Modificar precio unitario con el que se vendió"
+                          />
+                        </div>
                       </div>
 
-                      {/* Unit Controls */}
-                      <div className="flex items-center gap-3">
-                        <div className="flex items-center border border-slate-300 rounded-xl overflow-hidden bg-slate-50">
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateItemQuantity(index, -1)}
-                            className="px-2.5 py-1.5 hover:bg-slate-200 text-slate-700 cursor-pointer font-bold"
-                            title="Disminuir unidades"
-                          >
-                            <Minus className="w-3.5 h-3.5" />
-                          </button>
-                          <input
-                            type="text"
-                            value={item.quantity}
-                            onChange={e => handleSetItemQuantityDirect(index, e.target.value)}
-                            className="w-12 text-center bg-white py-1 font-black text-xs text-slate-900 outline-none"
-                          />
-                          <button
-                            type="button"
-                            onClick={() => handleUpdateItemQuantity(index, 1)}
-                            className="px-2.5 py-1.5 hover:bg-slate-200 text-slate-700 cursor-pointer font-bold"
-                            title="Aumentar unidades"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                          </button>
+                      {/* Units & Subtotal & Remove */}
+                      <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100">
+                        {/* Units Controls */}
+                        <div className="flex flex-col items-center">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Unidades</span>
+                          <div className="flex items-center border border-slate-300 rounded-xl overflow-hidden bg-slate-50">
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateItemQuantity(index, -1)}
+                              className="px-2.5 py-1.5 hover:bg-slate-200 text-slate-700 cursor-pointer font-bold"
+                              title="Disminuir unidades (restituirá al stock)"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                            <input
+                              type="number"
+                              min="1"
+                              value={item.quantity}
+                              onChange={e => handleSetItemQuantityDirect(index, e.target.value)}
+                              className="w-12 text-center bg-white py-1 font-black text-xs text-slate-900 outline-none [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              title="Cantidad de unidades vendidas"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleUpdateItemQuantity(index, 1)}
+                              className="px-2.5 py-1.5 hover:bg-slate-200 text-slate-700 cursor-pointer font-bold"
+                              title="Aumentar unidades (descontará del stock)"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </div>
 
                         {/* Subtotal */}
-                        <span className="font-black text-slate-900 text-xs w-20 text-right">
-                          {formatCOP(item.subtotal)}
-                        </span>
+                        <div className="flex flex-col items-end min-w-[70px]">
+                          <span className="text-[10px] text-slate-400 font-bold uppercase mb-0.5">Subtotal</span>
+                          <span className="font-black text-slate-900 text-xs sm:text-sm font-mono">
+                            {formatCOP(item.subtotal)}
+                          </span>
+                        </div>
 
-                        {/* Remove item */}
+                        {/* Remove item button */}
                         <button
                           type="button"
                           onClick={() => handleRemoveItemFromEdit(index)}
-                          className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg cursor-pointer"
-                          title="Eliminar artículo de la venta"
+                          className="p-2 text-rose-500 hover:bg-rose-50 hover:text-rose-700 rounded-xl cursor-pointer transition-colors"
+                          title="Quitar este producto de la venta (las unidades volverán automáticamente al inventario)"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1160,7 +1226,21 @@ export const SalesHistoryView: React.FC = () => {
                   )}
                 </div>
 
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sale = editingSale;
+                      setEditingSale(null);
+                      setSaleToDelete(sale);
+                    }}
+                    disabled={isSavingEdit}
+                    className="px-3.5 py-2.5 bg-rose-950/70 hover:bg-rose-600 text-rose-300 hover:text-white font-bold rounded-xl text-xs border border-rose-500/40 flex items-center gap-1.5 cursor-pointer transition-colors shadow-xs"
+                    title="Anular y eliminar toda la venta del historial permanente"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    <span>Anular Venta</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setEditingSale(null)}
@@ -1516,10 +1596,27 @@ export const SalesHistoryView: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-600 leading-relaxed">
-              Está a punto de eliminar la venta por <strong>{formatCOP(saleToDelete.total)}</strong> realizada el {saleToDelete.date} a las {saleToDelete.time}.
+              Está a punto de anular y eliminar la transacción por <strong>{formatCOP(saleToDelete.total)}</strong> realizada el {saleToDelete.date} a las {saleToDelete.time} por <strong>{saleToDelete.userName || 'Usuario'}</strong>.
             </p>
 
-            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs">
+            {/* List of items that will return to stock */}
+            {saleToDelete.items && saleToDelete.items.length > 0 && (
+              <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-xs space-y-1.5">
+                <span className="font-black text-emerald-900 block text-[11px] uppercase tracking-wide">
+                  📦 Reintegro automático al inventario:
+                </span>
+                <div className="max-h-28 overflow-y-auto space-y-1 pr-1">
+                  {saleToDelete.items.map((it, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-emerald-950 font-medium text-xs bg-white/70 px-2 py-1 rounded-lg border border-emerald-100">
+                      <span className="truncate mr-2">• {it.name}</span>
+                      <strong className="text-emerald-700 whitespace-nowrap">+{it.quantity} unids</strong>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="p-3 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-2">
               <label className="flex items-center gap-2 font-bold text-slate-800 cursor-pointer">
                 <input
                   type="checkbox"
@@ -1529,6 +1626,9 @@ export const SalesHistoryView: React.FC = () => {
                 />
                 <span>Reintegrar unidades vendidas al stock de inventario</span>
               </label>
+              <p className="text-[11px] text-slate-500 pl-6 leading-tight">
+                El total de caja del día, los informes y arqueos se recalcularán de inmediato reflejando esta anulación.
+              </p>
             </div>
 
             <div className="flex items-center gap-2 pt-2">
@@ -1544,10 +1644,10 @@ export const SalesHistoryView: React.FC = () => {
                 type="button"
                 onClick={handleConfirmDelete}
                 disabled={isDeleting}
-                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer transition-colors flex items-center justify-center gap-1.5"
+                className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black rounded-xl text-xs cursor-pointer transition-colors flex items-center justify-center gap-1.5 shadow-sm"
               >
                 <Trash2 className="w-4 h-4" />
-                <span>{isDeleting ? 'Anulando...' : 'Sí, Anular Venta'}</span>
+                <span>{isDeleting ? 'Anulando...' : 'Sí, Anular y Borrar Venta'}</span>
               </button>
             </div>
           </div>

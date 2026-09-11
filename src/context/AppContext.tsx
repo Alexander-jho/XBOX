@@ -1349,36 +1349,44 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return { success: false, message: 'Venta no encontrada en el historial' };
     }
 
-    // 1. Re-adjust inventory stock
+    // 1. Re-adjust inventory stock: Return previous units, then subtract new units
     setProducts(prevProducts => {
       let updated = [...prevProducts];
       let hasChanges = false;
 
       // Add back old quantities
       existingSale.items.forEach(oldItem => {
+        let idx = -1;
         if (oldItem.productId) {
-          const idx = updated.findIndex(p => p.id === oldItem.productId);
-          if (idx !== -1 && updated[idx].trackStock) {
-            updated[idx] = {
-              ...updated[idx],
-              stock: updated[idx].stock + oldItem.quantity,
-            };
-            hasChanges = true;
-          }
+          idx = updated.findIndex(p => p.id === oldItem.productId);
+        }
+        if (idx === -1 && oldItem.name) {
+          idx = updated.findIndex(p => p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
+        }
+        if (idx !== -1 && updated[idx].trackStock) {
+          updated[idx] = {
+            ...updated[idx],
+            stock: updated[idx].stock + oldItem.quantity,
+          };
+          hasChanges = true;
         }
       });
 
       // Subtract new quantities
       updatedData.items.forEach(newItem => {
+        let idx = -1;
         if (newItem.productId) {
-          const idx = updated.findIndex(p => p.id === newItem.productId);
-          if (idx !== -1 && updated[idx].trackStock) {
-            updated[idx] = {
-              ...updated[idx],
-              stock: Math.max(0, updated[idx].stock - newItem.quantity),
-            };
-            hasChanges = true;
-          }
+          idx = updated.findIndex(p => p.id === newItem.productId);
+        }
+        if (idx === -1 && newItem.name) {
+          idx = updated.findIndex(p => p.name.trim().toLowerCase() === newItem.name.trim().toLowerCase());
+        }
+        if (idx !== -1 && updated[idx].trackStock) {
+          updated[idx] = {
+            ...updated[idx],
+            stock: Math.max(0, updated[idx].stock - newItem.quantity),
+          };
+          hasChanges = true;
         }
       });
 
@@ -1438,7 +1446,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     return {
       success: true,
-      message: `Venta modificada exitosamente. Total: ${formatCOP(updatedData.total)}. El stock y el arqueo de caja se han actualizado automáticamente.`,
+      message: `Venta modificada exitosamente. Total recalculado: ${formatCOP(updatedData.total)}. El inventario físico y la caja diaria se actualizaron de inmediato.`,
     };
   };
 
@@ -1454,15 +1462,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         let updated = [...prevProducts];
         let hasChanges = false;
         existingSale.items.forEach(oldItem => {
+          let idx = -1;
           if (oldItem.productId) {
-            const idx = updated.findIndex(p => p.id === oldItem.productId);
-            if (idx !== -1 && updated[idx].trackStock) {
-              updated[idx] = {
-                ...updated[idx],
-                stock: updated[idx].stock + oldItem.quantity,
-              };
-              hasChanges = true;
-            }
+            idx = updated.findIndex(p => p.id === oldItem.productId);
+          }
+          if (idx === -1 && oldItem.name) {
+            idx = updated.findIndex(p => p.name.trim().toLowerCase() === oldItem.name.trim().toLowerCase());
+          }
+          if (idx !== -1 && updated[idx].trackStock) {
+            updated[idx] = {
+              ...updated[idx],
+              stock: updated[idx].stock + oldItem.quantity,
+            };
+            hasChanges = true;
           }
         });
         if (hasChanges) {
@@ -1486,7 +1498,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return updated;
     });
 
-    return { success: true, message: 'Venta anulada correctamente del historial permanente y stock reintegrado.' };
+    return { success: true, message: 'Venta anulada y eliminada del historial. El stock ha retornado a la bodega y la caja diaria se ha recalculado.' };
   };
 
   // Open Account for Consoles
