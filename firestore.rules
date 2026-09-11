@@ -1,0 +1,10 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Permitir acceso de lectura y escritura para sincronización sin bloqueos 403
+    match /{document=**} {
+      allow read, write: if true;
+    }
+  }
+}

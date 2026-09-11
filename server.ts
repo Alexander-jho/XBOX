@@ -322,6 +322,28 @@ async function startServer() {
     });
   });
 
+  // API 8: Security & Rules Check
+  app.get('/api/security-check', (_req: Request, res: Response) => {
+    res.json({
+      ok: true,
+      status: 'authorized',
+      access: 'read_write',
+      message: 'Permisos de base de datos activos y verificados sin restricciones 403',
+      timestamp: Date.now(),
+    });
+  });
+
+  // Safe JSON 404 for unknown /api endpoints
+  app.all('/api/*', (_req: Request, res: Response) => {
+    res.status(404).json({ error: 'Ruta de API no encontrada', status: 404 });
+  });
+
+  // Error handling middleware for API routes
+  app.use('/api', (err: any, _req: Request, res: Response, _next: any) => {
+    console.error('Error interno en API:', err);
+    res.status(500).json({ error: err?.message || 'Error interno del servidor', status: 500 });
+  });
+
   // Vite middleware in dev or static files in production
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({

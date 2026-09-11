@@ -13,6 +13,7 @@ import { ReportsView } from './components/ReportsView';
 import { ConfigView } from './components/ConfigView';
 import { CreditsView } from './components/CreditsView';
 import { LoginModal } from './components/LoginModal';
+import { DatabaseSecurityBanner } from './components/DatabaseSecurityBanner';
 import { NavTab, BusinessArea } from './types';
 import { Lock, ShieldCheck } from 'lucide-react';
 
@@ -56,6 +57,9 @@ const MainLayout: React.FC = () => {
         onOpenCash={() => setIsCashModalOpen(true)}
         onOpenLoginModal={() => setIsLoginModalOpen(true)}
       />
+
+      {/* Security and Database Status Banner */}
+      <DatabaseSecurityBanner />
 
       {/* Main Container */}
       <main className="flex-1 p-3 sm:p-5 md:p-6">

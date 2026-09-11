@@ -242,6 +242,8 @@ interface AppContextType {
   syncDiagnostics: SyncDiagnosticInfo;
   retryConnection: () => Promise<boolean>;
   forceFullSync: () => Promise<boolean>;
+  dbSecurityNotice: string | null;
+  dismissDbSecurityNotice: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
@@ -332,6 +334,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     }
   });
   const [lastSyncErrorMessage, setLastSyncErrorMessage] = useState<string | undefined>();
+  const [dbSecurityNotice, setDbSecurityNotice] = useState<string | null>(null);
+
+  const dismissDbSecurityNotice = useCallback(() => {
+    setDbSecurityNotice(null);
+  }, []);
 
   // 1. Users & Current User (Per-tab session support so Admin, Operador, and Cajero can run on different screens simultaneously)
   const [users, setUsers] = useState<User[]>(() => {
@@ -570,8 +577,24 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }),
           signal: syncController.signal,
         })
-          .then(r => {
+          .then(async r => {
             clearTimeout(syncTimer);
+            if (r.status === 403) {
+              const msg = 'Acceso denegado a la base de datos: revisa credenciales o reglas';
+              setDbSecurityNotice(msg);
+              setLastSyncErrorMessage(msg);
+              setCloudSyncStatus('local_mode');
+              return null;
+            }
+            if (r.status === 400 || r.status >= 500) {
+              setLastSyncErrorMessage(`Error HTTP ${r.status} al sincronizar: operando en Modo Local`);
+              setCloudSyncStatus('local_mode');
+              return null;
+            }
+            if (!r.ok) {
+              setCloudSyncStatus('local_mode');
+              return null;
+            }
             return r.json();
           })
           .then(res => {
@@ -584,8 +607,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           .catch(err => {
             clearTimeout(syncTimer);
             console.warn('Central server sync deferred (saved safely locally):', err?.name || err?.message);
-            if (typeof navigator !== 'undefined' && navigator.onLine) {
-              setCloudSyncStatus('online');
+            if (err?.message?.includes('403')) {
+              setDbSecurityNotice('Acceso denegado a la base de datos: revisa credenciales o reglas');
+              setCloudSyncStatus('local_mode');
+            } else if (typeof navigator !== 'undefined' && navigator.onLine) {
+              setCloudSyncStatus(prev => prev === 'local_mode' ? 'local_mode' : 'online');
             } else {
               setCloudSyncStatus('local_mode');
             }
@@ -691,8 +717,22 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }, 1500);
 
       fetch('/api/db', { signal: dbAbortController.signal })
-        .then(res => {
+        .then(async res => {
           clearTimeout(fetchTimer);
+          if (res.status === 403) {
+            const msg = 'Acceso denegado a la base de datos: revisa credenciales o reglas';
+            setDbSecurityNotice(msg);
+            setLastSyncErrorMessage(`${msg} (HTTP 403)`);
+            setCloudSyncStatus('local_mode');
+            setIsOnlineSyncActive(false);
+            throw new Error(`HTTP 403: ${msg}`);
+          }
+          if (res.status === 400 || res.status >= 500) {
+            const msg = `Error de servidor HTTP ${res.status}: Continuando en Modo Local`;
+            setLastSyncErrorMessage(msg);
+            setCloudSyncStatus('local_mode');
+            throw new Error(`HTTP ${res.status}`);
+          }
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           return res.json();
         })
@@ -735,7 +775,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           clearTimeout(fetchTimer);
           console.warn('Initial /api/db notice (working in local storage fallback):', err?.name || err?.message);
           if (!isSubscribed) return;
-          setCloudSyncStatus(typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'local_mode');
+          if (err?.message?.includes('403')) {
+            setDbSecurityNotice('Acceso denegado a la base de datos: revisa credenciales o reglas');
+            setCloudSyncStatus('local_mode');
+          } else {
+            setCloudSyncStatus(typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'local_mode');
+          }
           setIsOnlineSyncActive(true);
         });
     }
@@ -2029,16 +2074,38 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           updatedBy: currentUser?.username || 'sistema',
         }),
       })
-        .then(r => r.json())
+        .then(async r => {
+          if (r.status === 403) {
+            const msg = 'Acceso denegado a la base de datos: revisa credenciales o reglas';
+            setDbSecurityNotice(msg);
+            setLastSyncErrorMessage(`${msg} (HTTP 403)`);
+            setCloudSyncStatus('local_mode');
+            return null;
+          }
+          if (r.status === 400 || r.status >= 500) {
+            setLastSyncErrorMessage(`Error HTTP ${r.status} al guardar inventario`);
+            setCloudSyncStatus('local_mode');
+            return null;
+          }
+          if (!r.ok) {
+            setCloudSyncStatus('local_mode');
+            return null;
+          }
+          return r.json();
+        })
         .then(res => {
           if (res?.version) {
             setCloudVersion(res.version);
-            setCloudSyncStatus('connected');
+            setCloudSyncStatus('online');
             setIsOnlineSyncActive(true);
           }
         })
         .catch(err => {
-          console.warn('Direct cloud inventory save warning:', err);
+          console.warn('Direct cloud inventory save notice:', err);
+          if (err?.message?.includes('403')) {
+            setDbSecurityNotice('Acceso denegado a la base de datos: revisa credenciales o reglas');
+            setCloudSyncStatus('local_mode');
+          }
         });
     }
     return { success: true, count: products.length };
@@ -2113,6 +2180,18 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     const start = Date.now();
     try {
       const res = await fetch('/api/ping');
+      if (res.status === 403) {
+        const msg = 'Acceso denegado a la base de datos: revisa credenciales o reglas';
+        setDbSecurityNotice(msg);
+        setLastSyncErrorMessage(`${msg} (HTTP 403)`);
+        setCloudSyncStatus('local_mode');
+        return false;
+      }
+      if (res.status === 400 || res.status >= 500) {
+        setLastSyncErrorMessage(`Error HTTP ${res.status}: Continuando en Modo Local`);
+        setCloudSyncStatus('local_mode');
+        return false;
+      }
       const data = await res.json();
       const elapsed = Date.now() - start;
       setLatencyMs(elapsed);
@@ -2121,14 +2200,19 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setIsOnlineSyncActive(true);
         setLastSyncTimestamp(Date.now());
         setLastSyncErrorMessage(undefined);
+        setDbSecurityNotice(null);
         await forceFullSync();
         return true;
       }
-      setCloudSyncStatus('offline');
-      setLastSyncErrorMessage('El servidor central no respondió');
+      setCloudSyncStatus('local_mode');
+      setLastSyncErrorMessage('El servidor central no respondió: operando en Modo Local');
       return false;
     } catch (err: any) {
-      setCloudSyncStatus('offline');
+      console.warn('retryConnection notice:', err);
+      if (err?.message?.includes('403')) {
+        setDbSecurityNotice('Acceso denegado a la base de datos: revisa credenciales o reglas');
+      }
+      setCloudSyncStatus('local_mode');
       setLastSyncErrorMessage(err?.message || 'Error al conectar con la base de datos');
       return false;
     }
@@ -2137,6 +2221,17 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   const forceFullSync = async (): Promise<boolean> => {
     try {
       const res = await fetch('/api/db');
+      if (res.status === 403) {
+        const msg = 'Acceso denegado a la base de datos: revisa credenciales o reglas';
+        setDbSecurityNotice(msg);
+        setLastSyncErrorMessage(`${msg} (HTTP 403)`);
+        setCloudSyncStatus('local_mode');
+        return false;
+      }
+      if (!res.ok) {
+        setCloudSyncStatus('local_mode');
+        return false;
+      }
       const json = await res.json();
       if (json && json.success && json.db) {
         const db = json.db;
@@ -2144,6 +2239,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         setCloudSyncStatus('online');
         setIsOnlineSyncActive(true);
         setLastSyncTimestamp(Date.now());
+        setDbSecurityNotice(null);
         isReceivingRemoteSync.current = true;
         if (Array.isArray(db.products) && db.products.length > 0) setProducts(db.products);
         if (Array.isArray(db.consoles) && db.consoles.length > 0) setConsoles(db.consoles);
@@ -2168,6 +2264,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       return false;
     } catch (e: any) {
       console.warn('forceFullSync error:', e);
+      if (e?.message?.includes('403')) {
+        setDbSecurityNotice('Acceso denegado a la base de datos: revisa credenciales o reglas');
+      }
+      setCloudSyncStatus('local_mode');
       return false;
     }
   };
@@ -2280,6 +2380,8 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         syncDiagnostics,
         retryConnection,
         forceFullSync,
+        dbSecurityNotice,
+        dismissDbSecurityNotice,
       }}
     >
       {children}
