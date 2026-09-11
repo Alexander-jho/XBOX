@@ -255,7 +255,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 {cloudSyncStatus === 'online' || cloudSyncStatus === 'connected'
-                  ? 'ONLINE'
+                  ? 'NUBE ACTIVA'
                   : cloudSyncStatus === 'local_mode'
                   ? 'MODO LOCAL / SINCRONIZANDO'
                   : cloudSyncStatus === 'connecting'

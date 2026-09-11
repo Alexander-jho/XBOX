@@ -30,6 +30,8 @@ import {
   INITIAL_USERS,
 } from '../data/initialData';
 import { getTodayDateString, getCurrentTimeString, playAlertSound, formatCOP } from '../utils/formatters';
+import { getCentralDocRef } from '../lib/firebase';
+import { onSnapshot, setDoc, getDoc } from 'firebase/firestore';
 
 interface AppContextType {
   // Authentication & Users
@@ -311,6 +313,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
     []
   );
   const isReceivingRemoteSync = useRef(false);
+  const hasHydratedFromCloud = useRef(false);
   const lastProcessedSyncTimeRef = useRef<number>(Date.now());
 
   // Cloud Synchronization State & Fallback Engine
@@ -530,6 +533,10 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Broadcast function to notify all screens/tabs/windows and central cloud server instantly
   const broadcastChange = useCallback((key: string, data: any) => {
+    if (!hasHydratedFromCloud.current) {
+      // Protect central database from unhydrated default state overwrites
+      return;
+    }
     try {
       const now = Date.now();
       localStorage.setItem(key, JSON.stringify(data));
@@ -558,8 +565,26 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         );
       }
 
-      // 3. Central Cloud Server Multi-Device Synchronization
+      // 3. Real-time Cloud Push to Firebase Firestore (Single Cloud Collection)
       const table = keyToTableMap[key];
+      if (table) {
+        try {
+          const docRef = getCentralDocRef();
+          if (docRef) {
+            setDoc(docRef, {
+              [table]: data,
+              lastUpdated: now,
+              updatedBy: currentUser?.username || 'sistema',
+            }, { merge: true }).catch(err => {
+              console.warn('Firestore real-time write notice:', err?.message);
+            });
+          }
+        } catch (e) {
+          console.warn('Firestore write warning:', e);
+        }
+      }
+
+      // 4. Central Cloud Server Multi-Device Synchronization (Dual Redundancy)
       if (table && typeof fetch !== 'undefined') {
         const syncController = new AbortController();
         const syncTimer = setTimeout(() => {
@@ -745,6 +770,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             setIsOnlineSyncActive(true);
 
             isReceivingRemoteSync.current = true;
+            hasHydratedFromCloud.current = true;
             if (Array.isArray(db.products) && db.products.length > 0) setProducts(db.products);
             if (Array.isArray(db.consoles) && db.consoles.length > 0) setConsoles(db.consoles);
             if (Array.isArray(db.extraControllerRates) && db.extraControllerRates.length > 0) setExtraControllerRates(db.extraControllerRates);
@@ -940,6 +966,100 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       }
     }, 1200);
 
+    // G. Universal Real-Time Cloud Listener via Firebase Firestore
+    let unsubscribeFirestore: (() => void) | null = null;
+    try {
+      const docRef = getCentralDocRef();
+      if (docRef) {
+        unsubscribeFirestore = onSnapshot(
+          docRef,
+          (snapshot) => {
+            if (!isSubscribed) return;
+
+            if (!snapshot.exists()) {
+              // Very first boot on cloud: seed with initial catalogs, consoles, and cash
+              setDoc(docRef, {
+                version: 1,
+                lastUpdated: Date.now(),
+                products: INITIAL_PRODUCTS,
+                consoles: INITIAL_CONSOLES,
+                extraControllerRates: INITIAL_EXTRA_CONTROLLER_RATES,
+                users: INITIAL_USERS,
+                sessions: [],
+                closedSessions: [],
+                sales: [],
+                expenses: [],
+                inventoryEntries: [],
+                credits: [],
+                cash: currentCash,
+                cashClosures: [],
+                accountSeq: 1,
+              }, { merge: true })
+                .then(() => {
+                  hasHydratedFromCloud.current = true;
+                })
+                .catch(err => console.warn('Firestore initial seed notice:', err?.message));
+              return;
+            }
+
+            const cloudData = snapshot.data();
+            if (!cloudData) return;
+
+            // Mark hydrated so outgoing user actions can safely sync
+            hasHydratedFromCloud.current = true;
+
+            // Skip local in-flight writes to prevent echo
+            if (snapshot.metadata.hasPendingWrites) {
+              return;
+            }
+
+            isReceivingRemoteSync.current = true;
+            if (Array.isArray(cloudData.products) && cloudData.products.length > 0) setProducts(cloudData.products);
+            if (Array.isArray(cloudData.consoles) && cloudData.consoles.length > 0) setConsoles(cloudData.consoles);
+            if (Array.isArray(cloudData.extraControllerRates) && cloudData.extraControllerRates.length > 0) setExtraControllerRates(cloudData.extraControllerRates);
+            if (Array.isArray(cloudData.users) && cloudData.users.length > 0) setUsers(cloudData.users);
+            if (Array.isArray(cloudData.sales)) setSales(cloudData.sales);
+            if (Array.isArray(cloudData.expenses)) setExpenses(cloudData.expenses);
+            if (Array.isArray(cloudData.sessions)) setActiveSessions(cloudData.sessions);
+            if (Array.isArray(cloudData.closedSessions)) setClosedSessions(cloudData.closedSessions);
+            if (Array.isArray(cloudData.inventoryEntries)) setInventoryEntries(cloudData.inventoryEntries);
+            if (Array.isArray(cloudData.cashClosures)) setCashClosures(cloudData.cashClosures);
+            if (cloudData.cash) setCurrentCash(cloudData.cash);
+            if (cloudData.accountSeq) setAccountSeq(cloudData.accountSeq);
+            if (Array.isArray(cloudData.credits)) {
+              const clean = cloudData.credits.filter((c: any) => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez');
+              setCredits(clean);
+            }
+            if (cloudData.version) setCloudVersion(cloudData.version);
+            setCloudSyncStatus('online');
+            setIsOnlineSyncActive(true);
+            setLastSyncTimestamp(cloudData.lastUpdated || Date.now());
+            setDbSecurityNotice(null);
+
+            // Update local storage so any other components/tabs receive it
+            try {
+              if (cloudData.sales) localStorage.setItem(STORAGE_KEYS.SALES, JSON.stringify(cloudData.sales));
+              if (cloudData.cash) localStorage.setItem(STORAGE_KEYS.CASH, JSON.stringify(cloudData.cash));
+              if (cloudData.products) localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(cloudData.products));
+              if (cloudData.credits) localStorage.setItem(STORAGE_KEYS.CREDITS, JSON.stringify(cloudData.credits));
+            } catch {}
+
+            setTimeout(() => {
+              isReceivingRemoteSync.current = false;
+            }, 120);
+          },
+          (err) => {
+            console.warn('Firestore snapshot error:', err?.message);
+            if (err?.code === 'permission-denied') {
+              setDbSecurityNotice('Acceso denegado a Firestore: revisa credenciales o reglas');
+            }
+          }
+        );
+      }
+    } catch (err) {
+      console.warn('Firestore subscription setup notice:', err);
+    }
+
     return () => {
       isSubscribed = false;
       clearTimeout(networkVerificationTimeout);
@@ -947,6 +1067,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
         window.removeEventListener('online', handleOnline);
         window.removeEventListener('offline', handleOffline);
       }
+      if (unsubscribeFirestore) unsubscribeFirestore();
       if (eventSource) eventSource.close();
       if (channel) channel.close();
       window.removeEventListener('storage', handleStorage);
@@ -2220,6 +2341,46 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   const forceFullSync = async (): Promise<boolean> => {
     try {
+      // 1. Try Firebase Firestore directly (Cloud instance)
+      const docRef = getCentralDocRef();
+      if (docRef) {
+        try {
+          const snap = await getDoc(docRef);
+          if (snap.exists()) {
+            const cloudData = snap.data();
+            if (cloudData) {
+              isReceivingRemoteSync.current = true;
+              hasHydratedFromCloud.current = true;
+              if (Array.isArray(cloudData.products) && cloudData.products.length > 0) setProducts(cloudData.products);
+              if (Array.isArray(cloudData.consoles) && cloudData.consoles.length > 0) setConsoles(cloudData.consoles);
+              if (Array.isArray(cloudData.extraControllerRates) && cloudData.extraControllerRates.length > 0) setExtraControllerRates(cloudData.extraControllerRates);
+              if (Array.isArray(cloudData.users) && cloudData.users.length > 0) setUsers(cloudData.users);
+              if (Array.isArray(cloudData.sales)) setSales(cloudData.sales);
+              if (Array.isArray(cloudData.expenses)) setExpenses(cloudData.expenses);
+              if (Array.isArray(cloudData.sessions)) setActiveSessions(cloudData.sessions);
+              if (Array.isArray(cloudData.closedSessions)) setClosedSessions(cloudData.closedSessions);
+              if (Array.isArray(cloudData.inventoryEntries)) setInventoryEntries(cloudData.inventoryEntries);
+              if (Array.isArray(cloudData.cashClosures)) setCashClosures(cloudData.cashClosures);
+              if (cloudData.cash) setCurrentCash(cloudData.cash);
+              if (cloudData.accountSeq) setAccountSeq(cloudData.accountSeq);
+              if (Array.isArray(cloudData.credits)) {
+                setCredits(cloudData.credits.filter((c: any) => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez'));
+              }
+              setCloudVersion(cloudData.version || Date.now());
+              setCloudSyncStatus('online');
+              setIsOnlineSyncActive(true);
+              setLastSyncTimestamp(cloudData.lastUpdated || Date.now());
+              setDbSecurityNotice(null);
+              setTimeout(() => { isReceivingRemoteSync.current = false; }, 100);
+              return true;
+            }
+          }
+        } catch (fErr) {
+          console.warn('Direct Firestore getDoc notice:', fErr);
+        }
+      }
+
+      // 2. Dual redundancy via server REST API
       const res = await fetch('/api/db');
       if (res.status === 403) {
         const msg = 'Acceso denegado a la base de datos: revisa credenciales o reglas';
