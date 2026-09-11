@@ -6,7 +6,11 @@ export const DatabaseSecurityBanner: React.FC = () => {
   const { dbSecurityNotice, dismissDbSecurityNotice, retryConnection, cloudSyncStatus } = useApp();
   const [isRetrying, setIsRetrying] = React.useState(false);
 
-  if (!dbSecurityNotice) return null;
+  // If cloud is online or there is no security notice, hide the warning banner
+  if (!dbSecurityNotice || cloudSyncStatus === 'online' || cloudSyncStatus === 'connected') {
+    return null;
+  }
+
 
   const handleRetry = async () => {
     setIsRetrying(true);

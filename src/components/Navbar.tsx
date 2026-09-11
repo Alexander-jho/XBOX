@@ -221,10 +221,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             {/* Cloud Real-Time Online Status */}
             <div
               id="status-cloud-sync"
-              className="hidden md:flex h-9 items-center gap-1.5 px-2.5 rounded-xl bg-slate-800/90 border border-slate-700 text-xs select-none shrink-0 whitespace-nowrap shadow-2xs"
+              className={`flex h-8 md:h-9 items-center gap-1.5 px-2.5 rounded-xl border text-xs select-none shrink-0 whitespace-nowrap shadow-2xs transition-colors ${
+                cloudSyncStatus === 'online' || cloudSyncStatus === 'connected'
+                  ? 'bg-emerald-950/70 border-emerald-500/50 text-emerald-300'
+                  : cloudSyncStatus === 'local_mode'
+                  ? 'bg-amber-950/70 border-amber-500/50 text-amber-300'
+                  : cloudSyncStatus === 'connecting'
+                  ? 'bg-slate-800/90 border-slate-700 text-amber-300'
+                  : 'bg-rose-950/70 border-rose-500/50 text-rose-300'
+              }`}
               title={
                 cloudSyncStatus === 'online' || cloudSyncStatus === 'connected'
-                  ? `Conexión activa - Sincronización en tiempo real (v${cloudVersion})`
+                  ? `Conexión activa a Firestore Cloud - Sincronización en tiempo real (v${cloudVersion})`
                   : cloudSyncStatus === 'local_mode'
                   ? 'Modo local activo - Las ventas y operaciones se guardan de inmediato sin bloqueos'
                   : cloudSyncStatus === 'offline'
@@ -255,7 +263,7 @@ export const Navbar: React.FC<NavbarProps> = ({
                 }`}
               >
                 {cloudSyncStatus === 'online' || cloudSyncStatus === 'connected'
-                  ? 'NUBE ACTIVA'
+                  ? 'ONLINE / SINCRONIZADO'
                   : cloudSyncStatus === 'local_mode'
                   ? 'MODO LOCAL / SINCRONIZANDO'
                   : cloudSyncStatus === 'connecting'

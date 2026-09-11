@@ -6,11 +6,9 @@ import {
   setDoc,
   onSnapshot,
   Firestore,
-  DocumentReference,
-  DocumentData,
-  enableIndexedDbPersistence,
 } from 'firebase/firestore';
-import { getAuth, signInAnonymously, onAuthStateChanged, Auth } from 'firebase/auth';
+import type { DocumentReference, DocumentData, Unsubscribe } from 'firebase/firestore';
+
 
 export const firebaseConfig = {
   projectId: "predictive-graph-6cf5x",
@@ -24,29 +22,22 @@ export const firebaseConfig = {
 };
 
 let app: any = null;
-let auth: Auth | null = null;
 let db: Firestore | null = null;
 
 try {
   app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
-  auth = getAuth(app);
   
-  // Connect to the specific database instance created for this business
+  // Connect directly to the specific cloud database instance created for this business
   if (firebaseConfig.firestoreDatabaseId) {
     db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
   } else {
     db = getFirestore(app);
   }
-
-  // Authenticate anonymously so all queries have a valid Firebase auth token (prevents 403 Forbidden)
-  signInAnonymously(auth).catch((err) => {
-    console.warn('Firebase anonymous auth warning (still continuing with public rules):', err?.message);
-  });
 } catch (error) {
   console.error('Error initializing Firebase client:', error);
 }
 
-export { app, auth, db };
+export { app, db };
 
 export const CENTRAL_DOC_COLLECTION = 'pos_central_data';
 export const CENTRAL_DOC_ID = 'business_state';
@@ -55,3 +46,60 @@ export function getCentralDocRef(): DocumentReference<DocumentData> | null {
   if (!db) return null;
   return doc(db, CENTRAL_DOC_COLLECTION, CENTRAL_DOC_ID);
 }
+
+/**
+ * Persist a table or partial update directly to Firebase Firestore
+ */
+export async function saveToCloudFirestore(table: string, data: any, updatedBy: string = 'sistema'): Promise<boolean> {
+  const docRef = getCentralDocRef();
+  if (!docRef) return false;
+  try {
+    await setDoc(docRef, {
+      [table]: data,
+      lastUpdated: Date.now(),
+      updatedBy,
+    }, { merge: true });
+    return true;
+  } catch (err: any) {
+    console.error(`Error saving table ${table} to Firestore:`, err?.message || err);
+    throw err;
+  }
+}
+
+/**
+ * Fetch full business state directly from Firebase Firestore
+ */
+export async function fetchFromCloudFirestore(): Promise<DocumentData | null> {
+  const docRef = getCentralDocRef();
+  if (!docRef) return null;
+  const snapshot = await getDoc(docRef);
+  if (snapshot.exists()) {
+    return snapshot.data();
+  }
+  return null;
+}
+
+/**
+ * Subscribe to real-time changes from Firebase Firestore
+ */
+export function subscribeToCloudFirestore(
+  onData: (data: DocumentData, hasPendingWrites: boolean) => void,
+  onError?: (error: Error) => void
+): Unsubscribe | null {
+  const docRef = getCentralDocRef();
+  if (!docRef) return null;
+
+  return onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (snapshot.exists()) {
+        onData(snapshot.data(), snapshot.metadata.hasPendingWrites);
+      }
+    },
+    (err) => {
+      console.warn('Firestore subscription error:', err);
+      if (onError) onError(err);
+    }
+  );
+}
+
