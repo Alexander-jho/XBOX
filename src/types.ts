@@ -268,7 +268,7 @@ export interface InventoryEntry {
   notes?: string;
 }
 
-export type CloudSyncStatus = 'online' | 'offline' | 'connecting' | 'reconnecting';
+export type CloudSyncStatus = 'online' | 'connected' | 'offline' | 'connecting' | 'reconnecting' | 'local_mode';
 
 export interface SyncDiagnosticInfo {
   status: CloudSyncStatus;

@@ -313,7 +313,13 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
   // Cloud Synchronization State & Fallback Engine
   const [isOnlineSyncActive, setIsOnlineSyncActive] = useState<boolean>(true);
-  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>('connecting');
+  // Immediate network check: If navigator.onLine is true, set immediately to 'online' (no async blocking)
+  const [cloudSyncStatus, setCloudSyncStatus] = useState<CloudSyncStatus>(() => {
+    if (typeof navigator !== 'undefined') {
+      return navigator.onLine ? 'online' : 'local_mode';
+    }
+    return 'online';
+  });
   const [cloudVersion, setCloudVersion] = useState<number>(1);
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
   const [lastSyncTimestamp, setLastSyncTimestamp] = useState<number | null>(null);
@@ -548,6 +554,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
       // 3. Central Cloud Server Multi-Device Synchronization
       const table = keyToTableMap[key];
       if (table && typeof fetch !== 'undefined') {
+        const syncController = new AbortController();
+        const syncTimer = setTimeout(() => {
+          try { syncController.abort(); } catch {}
+        }, 1500);
+
         fetch('/api/db/sync', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -557,17 +568,27 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             updatedBy: currentUser?.username || 'sistema',
             senderId: tabInstanceId,
           }),
+          signal: syncController.signal,
         })
-          .then(r => r.json())
+          .then(r => {
+            clearTimeout(syncTimer);
+            return r.json();
+          })
           .then(res => {
             if (res && res.version) {
               setCloudVersion(res.version);
-              setCloudSyncStatus('connected');
+              setCloudSyncStatus('online');
               setIsOnlineSyncActive(true);
             }
           })
           .catch(err => {
-            console.warn('Central server sync offline/delayed:', err);
+            clearTimeout(syncTimer);
+            console.warn('Central server sync deferred (saved safely locally):', err?.name || err?.message);
+            if (typeof navigator !== 'undefined' && navigator.onLine) {
+              setCloudSyncStatus('online');
+            } else {
+              setCloudSyncStatus('local_mode');
+            }
           });
       }
     } catch (err) {
@@ -638,43 +659,84 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   useEffect(() => {
     let isSubscribed = true;
 
-    // A. Initial Hydration from Central Cloud Database
+    // 1. Strict 1.5s TIMEOUT for network/cloud verification: never stay stuck on 'connecting'
+    const networkVerificationTimeout = setTimeout(() => {
+      if (!isSubscribed) return;
+      setCloudSyncStatus(prev => {
+        if (prev === 'connecting' || prev === 'reconnecting') {
+          return typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'local_mode';
+        }
+        return prev;
+      });
+    }, 1500);
+
+    // 2. Native Window Online / Offline Handlers: Immediate instant response
+    const handleOnline = () => {
+      setCloudSyncStatus('online');
+      setIsOnlineSyncActive(true);
+    };
+    const handleOffline = () => {
+      setCloudSyncStatus('offline');
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('online', handleOnline);
+      window.addEventListener('offline', handleOffline);
+    }
+
+    // A. Initial Hydration from Central Cloud Database (with 1.5s AbortController timeout)
     if (typeof fetch !== 'undefined') {
-      fetch('/api/db')
-        .then(res => res.json())
+      const dbAbortController = new AbortController();
+      const fetchTimer = setTimeout(() => {
+        try { dbAbortController.abort(); } catch {}
+      }, 1500);
+
+      fetch('/api/db', { signal: dbAbortController.signal })
+        .then(res => {
+          clearTimeout(fetchTimer);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          return res.json();
+        })
         .then(json => {
-          if (!isSubscribed || !json.success || !json.db) return;
-          const db = json.db;
-          setCloudVersion(db.version || 1);
-          setCloudSyncStatus('connected');
-          setIsOnlineSyncActive(true);
+          if (!isSubscribed) return;
+          if (json && json.success && json.db) {
+            const db = json.db;
+            setCloudVersion(db.version || 1);
+            setCloudSyncStatus('online');
+            setIsOnlineSyncActive(true);
 
-          isReceivingRemoteSync.current = true;
-          if (Array.isArray(db.products) && db.products.length > 0) setProducts(db.products);
-          if (Array.isArray(db.consoles) && db.consoles.length > 0) setConsoles(db.consoles);
-          if (Array.isArray(db.extraControllerRates) && db.extraControllerRates.length > 0) setExtraControllerRates(db.extraControllerRates);
-          if (Array.isArray(db.users) && db.users.length > 0) setUsers(db.users);
-          if (Array.isArray(db.sales)) setSales(db.sales);
-          if (Array.isArray(db.expenses)) setExpenses(db.expenses);
-          if (Array.isArray(db.sessions)) setActiveSessions(db.sessions);
-          if (Array.isArray(db.closedSessions)) setClosedSessions(db.closedSessions);
-          if (Array.isArray(db.inventoryEntries)) setInventoryEntries(db.inventoryEntries);
-          if (Array.isArray(db.cashClosures)) setCashClosures(db.cashClosures);
-          if (db.cash) setCurrentCash(db.cash);
-          if (db.accountSeq) setAccountSeq(db.accountSeq);
-          if (Array.isArray(db.credits)) {
-            const clean = db.credits.filter((c: any) => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez');
-            setCredits(clean);
+            isReceivingRemoteSync.current = true;
+            if (Array.isArray(db.products) && db.products.length > 0) setProducts(db.products);
+            if (Array.isArray(db.consoles) && db.consoles.length > 0) setConsoles(db.consoles);
+            if (Array.isArray(db.extraControllerRates) && db.extraControllerRates.length > 0) setExtraControllerRates(db.extraControllerRates);
+            if (Array.isArray(db.users) && db.users.length > 0) setUsers(db.users);
+            if (Array.isArray(db.sales)) setSales(db.sales);
+            if (Array.isArray(db.expenses)) setExpenses(db.expenses);
+            if (Array.isArray(db.sessions)) setActiveSessions(db.sessions);
+            if (Array.isArray(db.closedSessions)) setClosedSessions(db.closedSessions);
+            if (Array.isArray(db.inventoryEntries)) setInventoryEntries(db.inventoryEntries);
+            if (Array.isArray(db.cashClosures)) setCashClosures(db.cashClosures);
+            if (db.cash) setCurrentCash(db.cash);
+            if (db.accountSeq) setAccountSeq(db.accountSeq);
+            if (Array.isArray(db.credits)) {
+              const clean = db.credits.filter((c: any) => !c.id?.includes('sample') && c.customerName !== 'Carlos Rodríguez');
+              setCredits(clean);
+            } else {
+              setCredits([]);
+            }
+
+            setTimeout(() => {
+              isReceivingRemoteSync.current = false;
+            }, 150);
           } else {
-            setCredits([]);
+            setCloudSyncStatus(typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'local_mode');
           }
-
-          setTimeout(() => {
-            isReceivingRemoteSync.current = false;
-          }, 150);
         })
         .catch(err => {
-          console.warn('Could not hydrate from /api/db on start:', err);
+          clearTimeout(fetchTimer);
+          console.warn('Initial /api/db notice (working in local storage fallback):', err?.name || err?.message);
+          if (!isSubscribed) return;
+          setCloudSyncStatus(typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'local_mode');
+          setIsOnlineSyncActive(true);
         });
     }
 
@@ -686,7 +748,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
         eventSource.onopen = () => {
           if (!isSubscribed) return;
-          setCloudSyncStatus('connected');
+          setCloudSyncStatus('online');
           setIsOnlineSyncActive(true);
         };
 
@@ -701,7 +763,7 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
             }
 
             if (payload.type === 'CONNECTED') {
-              setCloudSyncStatus('connected');
+              setCloudSyncStatus('online');
               setIsOnlineSyncActive(true);
               return;
             }
@@ -743,12 +805,16 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
           }
         };
 
-        eventSource.onerror = () => {
+        eventSource.onerror = (err) => {
           if (!isSubscribed) return;
-          setCloudSyncStatus('connecting');
+          console.warn('SSE connection notice:', err);
+          setCloudSyncStatus(typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'local_mode');
         };
       } catch (e) {
         console.warn('SSE initialization warning:', e);
+        if (isSubscribed) {
+          setCloudSyncStatus(typeof navigator !== 'undefined' && navigator.onLine ? 'online' : 'local_mode');
+        }
       }
     }
 
@@ -831,6 +897,11 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
 
     return () => {
       isSubscribed = false;
+      clearTimeout(networkVerificationTimeout);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('online', handleOnline);
+        window.removeEventListener('offline', handleOffline);
+      }
       if (eventSource) eventSource.close();
       if (channel) channel.close();
       window.removeEventListener('storage', handleStorage);
@@ -2102,10 +2173,12 @@ export const AppProvider: React.FC<{ children: ReactNode }> = ({ children }) => 
   };
 
   const syncDiagnostics: SyncDiagnosticInfo = useMemo(() => {
-    const isOnline = cloudSyncStatus === 'online';
+    const isOnline = cloudSyncStatus === 'online' || cloudSyncStatus === 'connected';
     const statusLabel =
-      cloudSyncStatus === 'online'
+      isOnline
         ? 'En línea • Sincronizado'
+        : cloudSyncStatus === 'local_mode'
+        ? 'Modo Local • Sincronizando'
         : cloudSyncStatus === 'connecting'
         ? 'Conectando...'
         : cloudSyncStatus === 'reconnecting'
